@@ -1,0 +1,52 @@
+services:
+  backend:
+    build:
+      context: ./SelcukStaj.Api
+      dockerfile: Dockerfile
+    container_name: selcuk_staj_backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - ASPNETCORE_URLS=http://+:5000
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Data Source=/app/data/selcuk_staj.db
+      - FileStorage__BasePath=/app/uploads
+      - Jwt__SecretKey=Selcuk_Universitesi_Bilgisayar_Muhendisligi_Staj_Gizli_Anahtar_2026_Key_SuperSecure!
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_ENABLE_SSL=${SMTP_ENABLE_SSL:-true}
+      - SMTP_USER=${SMTP_USER:-esrasagdic200@gmail.com}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-esrasagdic200@gmail.com}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Selçuk Üniversitesi Staj Bilgi Sistemi}
+    volumes:
+      - staj_db_data:/app/data
+      - staj_file_uploads:/app/uploads
+    networks:
+      - selcuk_staj_network
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: selcuk_staj_frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+      - "5173:80"
+    depends_on:
+      - backend
+    networks:
+      - selcuk_staj_network
+
+volumes:
+  staj_db_data:
+    name: selcuk_staj_db_data
+  staj_file_uploads:
+    name: selcuk_staj_file_uploads
+
+networks:
+  selcuk_staj_network:
+    name: selcuk_staj_net
+    driver: bridge

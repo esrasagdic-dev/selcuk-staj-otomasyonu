@@ -1,0 +1,35 @@
+# Build & Dependency directories
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+.vs/
+.vscode/
+
+# Local secrets & environment files
+.env
+.env.*
+**/appsettings.Development.json
+
+# SQLite local database files
+**/*.db
+**/*.db-shm
+**/*.db-wal
+
+# Local uploads & temporary test scripts
+SecureUploads/
+**/SecureUploads/
+official_docs/
+*.py
+*.mjs
+shot*.png
+capture_*.js
+clean_svg.js
+verify_*.js
+take_screenshots.ps1
+test_step.ps1
+login.json
+review_credentials.json
+test.pdf
+test_pdf.html
+vize_raporu.html

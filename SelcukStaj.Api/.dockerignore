@@ -1,0 +1,8 @@
+bin
+obj
+.vs
+.vscode
+.git
+SecureUploads
+selcuk_staj.db
+selcuk_staj.db-journal
