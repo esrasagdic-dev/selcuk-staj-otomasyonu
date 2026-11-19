@@ -1,0 +1,67 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: staj_db
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-staj_db}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-staj_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: staj_mailhog
+    restart: always
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: staj_api
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5000
+      ConnectionStrings__Default: Host=db;Port=5432;Database=${DB_NAME:-staj_db};Username=${DB_USER:-postgres};Password=${DB_PASSWORD:-postgres123}
+      Jwt__Key: ${JWT_KEY:-BuCokGizliVeGucluBirAnahtardirEnAz32KarakterOlmali_2026}
+      Jwt__Issuer: StajSistemi
+      Jwt__Audience: StajSistemi
+      Storage__Root: /app/uploads
+      Smtp__Host: mailhog
+      Smtp__Port: "1025"
+      Smtp__SenderEmail: staj@selcuk.edu.tr
+      Smtp__SenderName: "Selçuk Üniversitesi Staj Komisyonu"
+    volumes:
+      - uploads_data:/app/uploads
+    ports:
+      - "5000:5000"
+
+  client:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: staj_client
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  uploads_data:

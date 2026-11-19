@@ -1,0 +1,26 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Environment & Secrets
+.env
+
+# Data & Uploads
+# Not: staj.db (uydurma test verileri) bilerek repoya dahil edilir.
+uploads/
+/data/
+*.db-shm
+*.db-wal
+
+# OS
+Thumbs.db
+.DS_Store
