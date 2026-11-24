@@ -93,12 +93,33 @@ public class WorkDayCalculator
     }
 
     /// <summary>
-    /// Başlangıç tarihi, iş günü sayısı ve cumartesi çalışma durumuna göre bitiş tarihini hesaplar; atlanan tatilleri de döner.
+    /// Haftanın gününü işletim sistemi dil ayarından bağımsız olarak Türkçe döndürür.
+    /// </summary>
+    private static string TurkishDayName(DayOfWeek d) => d switch
+    {
+        DayOfWeek.Monday => "Pazartesi",
+        DayOfWeek.Tuesday => "Salı",
+        DayOfWeek.Wednesday => "Çarşamba",
+        DayOfWeek.Thursday => "Perşembe",
+        DayOfWeek.Friday => "Cuma",
+        DayOfWeek.Saturday => "Cumartesi",
+        _ => "Pazar"
+    };
+
+    /// <summary>
+    /// Başlangıç tarihi, iş günü sayısı ve cumartesi çalışma durumuna göre bitiş tarihini hesaplar; atlanan tatilleri ve gün-gün dökümü de döner.
     /// </summary>
     public async Task<EndDateResponse> CalculateAsync(DateOnly start, int workDays, bool worksOnSaturday = false, CancellationToken ct = default)
     {
         var horizon = start.AddDays(workDays * 2 + 30);
-        var holidays = await LoadHolidaysAsync(start, horizon, ct);
+        var rawHolidays = await _db.Holidays
+            .Where(h => h.Date >= start && h.Date <= horizon)
+            .OrderBy(h => h.Date)
+            .ToListAsync(ct);
+        var holidayMap = rawHolidays
+            .GroupBy(h => h.Date)
+            .ToDictionary(g => g.Key, g => g.First().Name);
+        var holidays = holidayMap.Keys.ToHashSet();
 
         if (!WorkDayMath.IsWorkDay(start, holidays, worksOnSaturday))
         {
@@ -108,16 +129,41 @@ public class WorkDayCalculator
         }
 
         var end = WorkDayMath.CalculateEndDate(start, workDays, holidays, worksOnSaturday);
-        var skipped = await _db.Holidays
-            .Where(h => h.Date >= start && h.Date <= end)
-            .OrderBy(h => h.Date)
+        var skipped = rawHolidays
+            .Where(h => h.Date >= start && h.Date <= end &&
+                        h.Date.DayOfWeek != DayOfWeek.Sunday &&
+                        (worksOnSaturday || h.Date.DayOfWeek != DayOfWeek.Saturday))
             .Select(h => new HolidayDto(h.Id, h.Date, h.Name))
-            .ToListAsync(ct);
-        skipped = skipped.Where(h =>
-            h.Date.DayOfWeek != DayOfWeek.Sunday &&
-            (worksOnSaturday || h.Date.DayOfWeek != DayOfWeek.Saturday)).ToList();
+            .ToList();
 
-        return new EndDateResponse(start, end, workDays, end.DayNumber - start.DayNumber + 1, skipped);
+        var breakdown = new List<WorkDayBreakdownItemDto>();
+        int workDayNo = 0, skippedSaturdays = 0, skippedSundays = 0;
+        for (var d = start; d <= end; d = d.AddDays(1))
+        {
+            var dayName = TurkishDayName(d.DayOfWeek);
+            if (d.DayOfWeek == DayOfWeek.Sunday)
+            {
+                skippedSundays++;
+                breakdown.Add(new WorkDayBreakdownItemDto(d, dayName, false, null, "Hafta Sonu (Pazar)"));
+            }
+            else if (holidayMap.TryGetValue(d, out var hName))
+            {
+                breakdown.Add(new WorkDayBreakdownItemDto(d, dayName, false, null, $"Resmî Tatil: {hName}"));
+            }
+            else if (d.DayOfWeek == DayOfWeek.Saturday && !worksOnSaturday)
+            {
+                skippedSaturdays++;
+                breakdown.Add(new WorkDayBreakdownItemDto(d, dayName, false, null, "Cumartesi (İşyeri Çalışmıyor)"));
+            }
+            else
+            {
+                workDayNo++;
+                var reason = d.DayOfWeek == DayOfWeek.Saturday ? "İş Günü (Cumartesi Dahil)" : "İş Günü";
+                breakdown.Add(new WorkDayBreakdownItemDto(d, dayName, true, workDayNo, reason));
+            }
+        }
+
+        return new EndDateResponse(start, end, workDays, end.DayNumber - start.DayNumber + 1, skipped, breakdown, skippedSaturdays, skippedSundays);
     }
 
     /// <summary>

@@ -59,6 +59,16 @@ public static class DbSeeder
                     ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AdvisorEmailSentAt" timestamp with time zone NULL;
                     ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AdvisorEmailStatus" text NULL;
                     ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AdvisorLastLoginAt" timestamp with time zone NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "Subject" text NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AdvisorTitle" text NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AdvisorGraduatedDepartment" text NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AcademicResult" integer NOT NULL DEFAULT 0;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AcceptedDaysCount" integer NOT NULL DEFAULT 0;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AdvisorApprovedIpAddress" text NULL;
+                    ALTER TABLE "Terms" ADD COLUMN IF NOT EXISTS "ApplicationStartDate" date NULL;
+                    ALTER TABLE "Terms" ADD COLUMN IF NOT EXISTS "IsSaturdayAllowed" boolean NOT NULL DEFAULT TRUE;
+                    UPDATE "Internships" SET "AcademicResult" = 1, "AcceptedDaysCount" = "WorkDays" WHERE "Status" = 7 AND "AcademicResult" = 0;
+                    UPDATE "Internships" SET "AcademicResult" = 3, "AcceptedDaysCount" = 0 WHERE "Status" = 8 AND "AcademicResult" = 0;
                     DO $$
                     BEGIN
                         IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Internships' AND column_name = 'WorksOnSaturday' AND data_type = 'integer') THEN
@@ -120,12 +130,29 @@ public static class DbSeeder
                 "ALTER TABLE \"Internships\" ADD COLUMN \"LogbookRevisionNote\" TEXT NULL;",
                 "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorEmailSentAt\" TEXT NULL;",
                 "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorEmailStatus\" TEXT NULL;",
-                "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorLastLoginAt\" TEXT NULL;"
+                "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorLastLoginAt\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"Subject\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorTitle\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorGraduatedDepartment\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"AcademicResult\" INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"AcceptedDaysCount\" INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorApprovedIpAddress\" TEXT NULL;",
+                "ALTER TABLE \"Terms\" ADD COLUMN \"ApplicationStartDate\" TEXT NULL;",
+                "ALTER TABLE \"Terms\" ADD COLUMN \"IsSaturdayAllowed\" INTEGER NOT NULL DEFAULT 1;"
             };
             foreach (var sql in alterColumns)
             {
                 try { await db.Database.ExecuteSqlRawAsync(sql); }
                 catch { /* Sütun zaten varsa yoksay */ }
+            }
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync("UPDATE \"Internships\" SET \"AcademicResult\" = 1, \"AcceptedDaysCount\" = \"WorkDays\" WHERE \"Status\" = 7 AND \"AcademicResult\" = 0;");
+                await db.Database.ExecuteSqlRawAsync("UPDATE \"Internships\" SET \"AcademicResult\" = 3, \"AcceptedDaysCount\" = 0 WHERE \"Status\" = 8 AND \"AcademicResult\" = 0;");
+            }
+            catch
+            {
+                // Yoksay
             }
         }
 
@@ -338,12 +365,14 @@ public static class DbSeeder
                     Name = "2026-2027 Yaz Stajı - Staj 1",
                     AcademicYear = "2026",
                     InternshipType = InternshipType.Staj1,
+                    ApplicationStartDate = new DateOnly(2026, 5, 1),
                     EarliestStartDate = new DateOnly(2026, 6, 15),
                     LatestEndDate = new DateOnly(2027, 9, 30),
                     ApplicationDeadline = new DateOnly(2027, 9, 1),
                     ReportDeadline = new DateOnly(2027, 10, 30),
                     MinWorkDays = 20,
                     MaxWorkDays = 30,
+                    IsSaturdayAllowed = true,
                     IsActive = true
                 },
                 new Term
@@ -351,12 +380,14 @@ public static class DbSeeder
                     Name = "2026-2027 Yaz Stajı - Staj 2",
                     AcademicYear = "2026",
                     InternshipType = InternshipType.Staj2,
+                    ApplicationStartDate = new DateOnly(2026, 5, 1),
                     EarliestStartDate = new DateOnly(2026, 6, 15),
                     LatestEndDate = new DateOnly(2027, 9, 30),
                     ApplicationDeadline = new DateOnly(2027, 9, 1),
                     ReportDeadline = new DateOnly(2027, 10, 30),
                     MinWorkDays = 20,
                     MaxWorkDays = 30,
+                    IsSaturdayAllowed = true,
                     IsActive = true
                 });
         }
@@ -501,6 +532,8 @@ public static class DbSeeder
                     WorksOnSaturday = idx % 2 == 0,
                     ReceivesSalary = idx % 3 == 0,
                     Status = InternshipStatus.Passed,
+                    AcademicResult = AcademicResultType.Successful,
+                    AcceptedDaysCount = 20,
                     KptoStatus = KptoInsuranceStatus.InsuranceActive,
                     SubmittedAt = new DateTime(yearInt, 6, 10, 10, 0, 0, DateTimeKind.Utc),
                     ApprovedAt = new DateTime(yearInt, 6, 15, 14, 0, 0, DateTimeKind.Utc),

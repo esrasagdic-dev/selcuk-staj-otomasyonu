@@ -53,7 +53,8 @@ public static class Mapping
             form2?.Id, form2?.OriginalFileName,
             spas?.Id, spas?.OriginalFileName,
             form7?.Id, form7?.OriginalFileName,
-            i.WorksOnSaturday, i.LogbookSubmittedToAdvisorAt, i.LogbookRevisionRequested);
+            i.WorksOnSaturday, i.LogbookSubmittedToAdvisorAt, i.LogbookRevisionRequested,
+            i.AcademicResult, i.AcceptedDaysCount, i.Subject);
     }
 
     /// <summary>Stajı detay DTO'suna çevirir (tüm ilişkiler yüklü olmalıdır).</summary>
@@ -79,7 +80,13 @@ public static class Mapping
         i.AdvisorEmailSentAt,
         i.AdvisorEmailStatus,
         i.AdvisorLastLoginAt,
-        i.EndingSoonNotified);
+        i.EndingSoonNotified,
+        i.Subject,
+        i.AdvisorTitle,
+        i.AdvisorGraduatedDepartment,
+        i.AcademicResult,
+        i.AcceptedDaysCount,
+        i.AdvisorApprovedIpAddress);
 
     /// <summary>Durumu Türkçe metne çevirir (e-posta ve bildirim metinleri için).</summary>
     public static string ToTurkish(this InternshipStatus s) => s switch
@@ -95,7 +102,17 @@ public static class Mapping
         InternshipStatus.Failed => "Kaldı",
         InternshipStatus.Cancelled => "İptal",
         InternshipStatus.CancellationRequested => "İptal Talebi Bekliyor (Form 7)",
+        InternshipStatus.Rejected => "Reddedildi",
         _ => s.ToString()
+    };
+
+    /// <summary>Akademik değerlendirme sonucunu Türkçe metne çevirir.</summary>
+    public static string ToTurkish(this AcademicResultType r) => r switch
+    {
+        AcademicResultType.Successful => "Başarılı (Tam Kabul)",
+        AcademicResultType.PartiallySuccessful => "Kısmen Başarılı",
+        AcademicResultType.Unsuccessful => "Başarısız (Kaldı)",
+        _ => "Değerlendirilmedi"
     };
 
     /// <summary>Staj türünü Türkçe metne çevirir.</summary>

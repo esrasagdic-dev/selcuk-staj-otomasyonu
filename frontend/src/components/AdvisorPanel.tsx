@@ -241,6 +241,11 @@ export const AdvisorPanel: React.FC = () => {
                     <p className="text-sm text-slate-600">
                       {selected.type === 'Staj1' ? 'Staj 1' : 'Staj 2'} • {selected.companyName} ({selected.department || 'Genel Birim'})
                     </p>
+                    {selected.subject && (
+                      <p className="text-xs text-slate-600">
+                        Staj Konusu: <b>{selected.subject}</b>
+                      </p>
+                    )}
                     <p className="mt-1 text-xs text-slate-500">
                       Tarih: <b>{formatDate(selected.startDate)}</b> – <b>{formatDate(selected.endDate)}</b> ({selected.workDays} İş Günü • Cumartesi: {selected.worksOnSaturday ? 'Çalışıyor' : 'Çalışmıyor'})
                       {selected.currentDay !== undefined && selected.currentDay !== null && selected.currentDay > 0 && (
@@ -323,9 +328,16 @@ export const AdvisorPanel: React.FC = () => {
                     )}
 
                     {selected.advisorLogbookApproved ? (
-                      <div className="flex items-center gap-2 rounded-lg bg-emerald-100 px-3 py-2.5 text-xs font-bold text-emerald-800">
-                        <CheckCircle2 className="h-4 w-4" />
-                        Staj defterini gördüm ve inceledim ({formatDate(selected.advisorApprovedAt)})
+                      <div className="rounded-lg bg-emerald-100 px-3 py-2.5 text-xs font-bold text-emerald-800 space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 shrink-0" />
+                          <span>Staj defterini gördüm ve inceledim ({formatDate(selected.advisorApprovedAt)})</span>
+                        </div>
+                        {selected.advisorApprovedIpAddress && (
+                          <div className="pl-6 text-[11px] font-medium text-emerald-700">
+                            Onay IP Damgası: <b>{selected.advisorApprovedIpAddress}</b>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <button

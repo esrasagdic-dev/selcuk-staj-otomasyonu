@@ -224,13 +224,23 @@ public class InternshipService
                    ?? await _db.Terms.FirstOrDefaultAsync(t => t.IsActive, ct)
                    ?? await _db.Terms.FirstOrDefaultAsync(ct)
                    ?? throw AppException.NotFound("Dönem");
-        if (req.WorkDays < 1 || req.WorkDays > 60)
-            throw AppException.BadRequest("İş günü sayısı geçersiz.");
+        if (term.ApplicationStartDate.HasValue && Today < term.ApplicationStartDate.Value)
+            throw AppException.BadRequest($"Bu dönem için başvurular {term.ApplicationStartDate.Value:dd.MM.yyyy} tarihinde başlayacaktır.");
+        if (Today > term.ApplicationDeadline)
+            throw AppException.BadRequest($"Bu dönem için son başvuru tarihi ({term.ApplicationDeadline:dd.MM.yyyy}) geçmiştir.");
+        if (req.WorksOnSaturday && !term.IsSaturdayAllowed)
+            throw AppException.BadRequest($"\"{term.Name}\" döneminde Cumartesi çalışmasına izin verilmemektedir.");
+        if (req.WorkDays < term.MinWorkDays || req.WorkDays > term.MaxWorkDays)
+            throw AppException.BadRequest($"Bu dönem için staj süresi {term.MinWorkDays} ile {term.MaxWorkDays} iş günü arasında olmalıdır.");
+        if (req.StartDate < term.EarliestStartDate)
+            throw AppException.BadRequest($"Staj başlangıç tarihi dönemin en erken başlama tarihinden ({term.EarliestStartDate:dd.MM.yyyy}) önce olamaz.");
         if (string.IsNullOrWhiteSpace(req.AdvisorEmail) || !req.AdvisorEmail.Contains('@'))
             throw AppException.BadRequest("Geçerli bir şirket yetkilisi e-posta adresi giriniz.");
         if (string.IsNullOrWhiteSpace(req.AdvisorName)) throw AppException.BadRequest("Şirket yetkilisinin adı zorunludur.");
 
         var calc = await _calc.CalculateAsync(req.StartDate, req.WorkDays, req.WorksOnSaturday, ct);
+        if (calc.EndDate > term.LatestEndDate)
+            throw AppException.BadRequest($"Hesaplanan staj bitiş tarihi ({calc.EndDate:dd.MM.yyyy}) dönemin en geç bitiş tarihini ({term.LatestEndDate:dd.MM.yyyy}) aşmaktadır.");
 
         Company company;
         if (req.CompanyId.HasValue)
@@ -250,7 +260,10 @@ public class InternshipService
         i.StartDate = req.StartDate;
         i.EndDate = calc.EndDate;
         i.OriginalEndDate = calc.EndDate;
-        i.Department = req.Department;
+        i.Department = string.IsNullOrWhiteSpace(req.Department) ? null : req.Department.Trim();
+        i.Subject = string.IsNullOrWhiteSpace(req.Subject) ? null : req.Subject.Trim();
+        i.AdvisorTitle = string.IsNullOrWhiteSpace(req.AdvisorTitle) ? null : req.AdvisorTitle.Trim();
+        i.AdvisorGraduatedDepartment = string.IsNullOrWhiteSpace(req.AdvisorGraduatedDepartment) ? null : req.AdvisorGraduatedDepartment.Trim();
         i.ReceivesSalary = req.ReceivesSalary;
         i.WorksOnSaturday = req.WorksOnSaturday;
     }

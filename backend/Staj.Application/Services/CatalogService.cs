@@ -36,7 +36,8 @@ public class CatalogService
         if (onlyOpen) q = q.Where(t => t.IsActive);
         return await q.OrderByDescending(t => t.AcademicYear).ThenBy(t => t.InternshipType)
             .Select(t => new TermDto(t.Id, t.Name, t.AcademicYear, t.InternshipType, t.EarliestStartDate, t.LatestEndDate,
-                t.ApplicationDeadline, t.ReportDeadline, t.MinWorkDays, t.MaxWorkDays, t.IsActive, t.Internships.Count))
+                t.ApplicationDeadline, t.ReportDeadline, t.MinWorkDays, t.MaxWorkDays, t.IsActive, t.Internships.Count,
+                t.ApplicationStartDate, t.IsSaturdayAllowed))
             .ToListAsync(ct);
     }
 
@@ -82,6 +83,8 @@ public class CatalogService
     {
         if (string.IsNullOrWhiteSpace(r.Name)) throw AppException.BadRequest("Dönem adı zorunludur.");
         if (r.EarliestStartDate >= r.LatestEndDate) throw AppException.BadRequest("En erken başlangıç, en geç bitişten önce olmalıdır.");
+        if (r.ApplicationStartDate.HasValue && r.ApplicationStartDate.Value > r.ApplicationDeadline)
+            throw AppException.BadRequest("Başvuru başlangıç tarihi, son başvuru tarihinden sonra olamaz.");
         if (r.MinWorkDays < 1 || r.MaxWorkDays < r.MinWorkDays) throw AppException.BadRequest("İş günü sınırları geçersiz.");
     }
 
@@ -90,12 +93,14 @@ public class CatalogService
         t.Name = r.Name.Trim();
         t.AcademicYear = r.AcademicYear.Trim();
         t.InternshipType = r.InternshipType;
+        t.ApplicationStartDate = r.ApplicationStartDate;
         t.EarliestStartDate = r.EarliestStartDate;
         t.LatestEndDate = r.LatestEndDate;
         t.ApplicationDeadline = r.ApplicationDeadline;
         t.ReportDeadline = r.ReportDeadline;
         t.MinWorkDays = r.MinWorkDays;
         t.MaxWorkDays = r.MaxWorkDays;
+        t.IsSaturdayAllowed = r.IsSaturdayAllowed;
         t.IsActive = r.IsActive;
     }
 
@@ -204,7 +209,7 @@ public class CatalogService
         var list = await _db.Companies
             .Select(c => new CompanyStatDto(
                 c.Id, c.Name, c.City, c.Sector, c.IsVerified,
-                c.Internships.Count(i => i.Status != InternshipStatus.Draft && i.Status != InternshipStatus.Cancelled),
+                c.Internships.Count(i => i.Status != InternshipStatus.Draft && i.Status != InternshipStatus.Cancelled && i.Status != InternshipStatus.Rejected),
                 c.Internships.Count(i => i.Status == InternshipStatus.Passed),
                 c.Internships.Count(i => active.Contains(i.Status))))
             .ToListAsync(ct);

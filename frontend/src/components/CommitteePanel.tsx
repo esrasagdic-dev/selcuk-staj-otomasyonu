@@ -22,6 +22,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import {
+  academicResultColors,
+  academicResultLabels,
   api,
   docTypeLabels,
   downloadBlob,
@@ -30,6 +32,7 @@ import {
   roleLabels,
   statusColors,
   statusLabels,
+  type AcademicResultType,
   type AnnouncementDto,
   type CommitteeStatsDto,
   type CompanyStatDto,
@@ -107,7 +110,7 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
 
   // Diğer sekmelerin verileri
   const [leaves, setLeaves] = useState<LeaveRequestDto[]>([]);
-  const [, setTerms] = useState<TermDto[]>([]);
+  const [terms, setTerms] = useState<TermDto[]>([]);
   const [holidays, setHolidays] = useState<HolidayDto[]>([]);
   const [companyStats, setCompanyStats] = useState<CompanyStatDto[]>([]);
   const [listings, setListings] = useState<ListingDto[]>([]);
@@ -115,18 +118,22 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
 
   // Gerekçe / Değerlendirme Inputları
   const [actionNote, setActionNote] = useState('');
+  const [evalResult, setEvalResult] = useState<AcademicResultType>('Successful');
+  const [acceptedDays, setAcceptedDays] = useState<number>(20);
 
   // Yeni Dönem Formu
   const [newTerm, setNewTerm] = useState({
     name: '2026-2027 Yaz Dönemi - Staj 1',
     academicYear: '2026',
     internshipType: 'Staj1' as 'Staj1' | 'Staj2',
+    applicationStartDate: '2026-05-01',
     earliestStartDate: '2026-06-15',
-    latestEndDate: '2026-09-30',
-    applicationDeadline: '2026-06-10',
-    reportDeadline: '2026-10-15',
+    latestEndDate: '2027-09-30',
+    applicationDeadline: '2027-09-01',
+    reportDeadline: '2027-10-30',
     minWorkDays: 20,
     maxWorkDays: 30,
+    isSaturdayAllowed: true,
     isActive: true,
   });
 
@@ -238,6 +245,16 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
       ]);
       setSelected(detailRes.data);
       setLogbook(logRes.data);
+      setEvalResult(
+        detailRes.data.academicResult && detailRes.data.academicResult !== 'None'
+          ? detailRes.data.academicResult
+          : 'Successful'
+      );
+      setAcceptedDays(
+        detailRes.data.acceptedDaysCount && detailRes.data.acceptedDaysCount > 0
+          ? detailRes.data.acceptedDaysCount
+          : Math.max(1, detailRes.data.workDays - 1)
+      );
     } catch {
       setSelected(null);
     }
@@ -588,18 +605,46 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
     }
   };
 
-  const handleEvaluate = async (passed: boolean) => {
+  const handleRejectApplication = async () => {
     if (!selected) return;
+    if (!actionNote.trim()) {
+      setMsg({ type: 'err', text: 'Lütfen başvuru reddi için gerekçenizi yazınız.' });
+      return;
+    }
     setMsg(null);
     try {
+      await api.post(`/committee/internships/${selected.id}/reject`, { note: actionNote });
+      setActionNote('');
+      setMsg({
+        type: 'ok',
+        text: 'Başvuru gerekçeli olarak reddedildi ve öğrenci bilgilendirildi.',
+      });
+      await loadApplications();
+    } catch (err) {
+      setMsg({ type: 'err', text: getErrorMessage(err) });
+    }
+  };
+
+  const handleEvaluate = async () => {
+    if (!selected) return;
+    setMsg(null);
+    const resolvedDays =
+      evalResult === 'PartiallySuccessful'
+        ? acceptedDays
+        : evalResult === 'Successful'
+        ? selected.workDays
+        : 0;
+    try {
       await api.post(`/committee/internships/${selected.id}/evaluate`, {
-        passed,
+        passed: evalResult !== 'Unsuccessful',
         note: actionNote,
+        academicResult: evalResult,
+        acceptedDaysCount: resolvedDays,
       });
       setActionNote('');
       setMsg({
         type: 'ok',
-        text: `Staj sonu değerlendirmesi "${passed ? 'GEÇTİ' : 'KALDI'}" olarak kaydedildi.`,
+        text: `Staj sonu değerlendirmesi "${academicResultLabels[evalResult]}" (${resolvedDays}/${selected.workDays} gün) olarak kaydedildi.`,
       });
       await loadApplications();
     } catch (err) {
@@ -747,7 +792,10 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
     e.preventDefault();
     setMsg(null);
     try {
-      await api.post('/terms', newTerm);
+      await api.post('/terms', {
+        ...newTerm,
+        applicationStartDate: newTerm.applicationStartDate || null,
+      });
       setMsg({ type: 'ok', text: 'Yeni staj dönemi açıldı.' });
       await loadOtherTabs();
     } catch (err) {
@@ -1233,14 +1281,28 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                         <p className="text-xs font-semibold text-indigo-700">
                           {item.type === 'Staj1' ? 'Staj 1' : 'Staj 2'} — {item.companyName}
                         </p>
+                        {item.subject && (
+                          <p className="text-[11px] text-slate-600 truncate">Konu: {item.subject}</p>
+                        )}
                       </div>
-                      <span
-                        className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
-                          statusColors[item.status]
-                        }`}
-                      >
-                        {statusLabels[item.status]}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span
+                          className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
+                            statusColors[item.status]
+                          }`}
+                        >
+                          {statusLabels[item.status]}
+                        </span>
+                        {item.academicResult && item.academicResult !== 'None' && (
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                              academicResultColors[item.academicResult]
+                            }`}
+                          >
+                            {academicResultLabels[item.academicResult]} ({item.acceptedDaysCount ?? 0}/{item.workDays} Gün)
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
                       <span>
@@ -1314,11 +1376,35 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                       {selected.companyName} — {selected.type === 'Staj1' ? 'Staj 1' : 'Staj 2'} ({selected.archiveYear || selected.startDate.slice(0, 4)} Yılı)
                     </p>
                     <p className="text-xs text-slate-600">
-                      Şirket Yetkilisi: <b>{selected.advisorName}</b> ({selected.advisorEmail}) • Tarih:{' '}
+                      Şirket Yetkilisi: <b>{selected.advisorName}</b>
+                      {selected.advisorTitle ? ` (${selected.advisorTitle})` : ''} ({selected.advisorEmail}) • Tarih:{' '}
                       <b>
                         {formatDate(selected.startDate)} – {formatDate(selected.endDate)} ({selected.workDays} İş Günü • Cumartesi: {selected.worksOnSaturday ? 'Çalışıyor' : 'Çalışmıyor'})
                       </b>
                     </p>
+                    {(selected.subject || selected.advisorGraduatedDepartment || (selected.academicResult && selected.academicResult !== 'None')) && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                        {selected.subject && (
+                          <span>
+                            Staj Konusu: <b className="text-slate-900">{selected.subject}</b>
+                          </span>
+                        )}
+                        {selected.advisorGraduatedDepartment && (
+                          <span>
+                            • Mezuniyet: <b className="text-slate-900">{selected.advisorGraduatedDepartment}</b>
+                          </span>
+                        )}
+                        {selected.academicResult && selected.academicResult !== 'None' && (
+                          <span
+                            className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
+                              academicResultColors[selected.academicResult]
+                            }`}
+                          >
+                            {academicResultLabels[selected.academicResult]} ({selected.acceptedDaysCount ?? 0}/{selected.workDays} Gün)
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -1438,6 +1524,11 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                           ? `📩 Öğrenci Gönderdi (${formatDate(selected.logbookSubmittedToAdvisorAt)})`
                           : `Defter Yazılıyor (${logbook.length}/${selected.workDays} gün)`}
                       </p>
+                      {selected.advisorApprovedIpAddress && (
+                        <p className="mt-0.5 text-[11px] text-emerald-700">
+                          Onay IP: <b>{selected.advisorApprovedIpAddress}</b>
+                        </p>
+                      )}
                     </div>
                   </div>
                   {selected.advisorEmailStatus && (
@@ -1497,6 +1588,19 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                       </button>
                     )}
 
+                    {(selected.status === 'Submitted' ||
+                      selected.status === 'RevisionRequested' ||
+                      selected.status === 'ApprovedByCommittee') && (
+                      <button
+                        type="button"
+                        onClick={handleRejectApplication}
+                        className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-rose-700"
+                      >
+                        <XCircle className="h-4 w-4" />
+                        Başvuruyu Gerekçeli Reddet
+                      </button>
+                    )}
+
                     {(selected.status === 'InProgress' || selected.status === 'CompletedPendingReview') && (
                       <button
                         type="button"
@@ -1507,27 +1611,89 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                         Staj Defteri İçin Revize İste
                       </button>
                     )}
-
-                    {(selected.status === 'CompletedPendingReview' || selected.status === 'InProgress') && (
-                      <>
-                        <button
-                          onClick={() => handleEvaluate(true)}
-                          disabled={logbook.length < selected.workDays}
-                          className="flex items-center gap-1.5 rounded-lg bg-green-700 px-4 py-2 text-xs font-bold text-white hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                          Stajı Başarılı Say (GEÇTİ)
-                        </button>
-                        <button
-                          onClick={() => handleEvaluate(false)}
-                          className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700"
-                        >
-                          <XCircle className="h-4 w-4" />
-                          Stajı Başarısız Say (KALDI)
-                        </button>
-                      </>
-                    )}
                   </div>
+
+                  {(selected.status === 'CompletedPendingReview' || selected.status === 'InProgress') && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-3">
+                      <p className="text-xs font-bold text-slate-800">
+                        3 Kademeli Akademik Değerlendirme Kararı:
+                      </p>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <button
+                          type="button"
+                          onClick={() => setEvalResult('Successful')}
+                          className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${
+                            evalResult === 'Successful'
+                              ? 'border-emerald-600 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-500/20'
+                              : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          ✔ Başarılı (Tam Kabul — {selected.workDays} Gün)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEvalResult('PartiallySuccessful')}
+                          className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${
+                            evalResult === 'PartiallySuccessful'
+                              ? 'border-amber-600 bg-amber-50 text-amber-900 ring-2 ring-amber-500/20'
+                              : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          ◐ Kısmen Başarılı (Belirli Gün)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEvalResult('Unsuccessful')}
+                          className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${
+                            evalResult === 'Unsuccessful'
+                              ? 'border-rose-600 bg-rose-50 text-rose-900 ring-2 ring-rose-500/20'
+                              : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          ✖ Başarısız (Kaldı)
+                        </button>
+                      </div>
+
+                      {evalResult === 'PartiallySuccessful' && (
+                        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50/70 p-2.5 text-xs">
+                          <label className="font-bold text-amber-950">Kabul Edilen İş Günü:</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={Math.max(1, selected.workDays - 1)}
+                            value={acceptedDays}
+                            onChange={(e) => setAcceptedDays(Number(e.target.value))}
+                            className="w-24 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-900"
+                          />
+                          <span className="text-amber-900">
+                            / {selected.workDays} İş Günü (Gerekçe notu zorunludur)
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={handleEvaluate}
+                          disabled={evalResult === 'Successful' && logbook.length < selected.workDays}
+                          className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50 ${
+                            evalResult === 'Unsuccessful'
+                              ? 'bg-rose-600 hover:bg-rose-700'
+                              : evalResult === 'PartiallySuccessful'
+                              ? 'bg-amber-600 hover:bg-amber-700'
+                              : 'bg-green-700 hover:bg-green-800'
+                          }`}
+                        >
+                          {evalResult === 'Unsuccessful' ? (
+                            <XCircle className="h-4 w-4" />
+                          ) : (
+                            <CheckCircle2 className="h-4 w-4" />
+                          )}
+                          Değerlendirme Kararını Kaydet
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Öğrencinin İlettiği Form 7 (Staj İptal Talebi) İnceleme & Önizleme Alanı */}
@@ -1819,11 +1985,35 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                         {archiveSelected.companyName} — {archiveSelected.type === 'Staj1' ? 'Staj 1' : 'Staj 2'}
                       </p>
                       <p className="text-xs text-slate-600">
-                        Şirket Yetkilisi: <b>{archiveSelected.advisorName}</b> ({archiveSelected.advisorEmail}) • Tarih:{' '}
+                        Şirket Yetkilisi: <b>{archiveSelected.advisorName}</b>
+                        {archiveSelected.advisorTitle ? ` (${archiveSelected.advisorTitle})` : ''} ({archiveSelected.advisorEmail}) • Tarih:{' '}
                         <b>
                           {formatDate(archiveSelected.startDate)} – {formatDate(archiveSelected.endDate)} ({archiveSelected.workDays} İş Günü)
                         </b>
                       </p>
+                      {(archiveSelected.subject || archiveSelected.advisorGraduatedDepartment || (archiveSelected.academicResult && archiveSelected.academicResult !== 'None')) && (
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                          {archiveSelected.subject && (
+                            <span>
+                              Staj Konusu: <b className="text-slate-900">{archiveSelected.subject}</b>
+                            </span>
+                          )}
+                          {archiveSelected.advisorGraduatedDepartment && (
+                            <span>
+                              • Mezuniyet: <b className="text-slate-900">{archiveSelected.advisorGraduatedDepartment}</b>
+                            </span>
+                          )}
+                          {archiveSelected.academicResult && archiveSelected.academicResult !== 'None' && (
+                            <span
+                              className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
+                                academicResultColors[archiveSelected.academicResult]
+                              }`}
+                            >
+                              {academicResultLabels[archiveSelected.academicResult]} ({archiveSelected.acceptedDaysCount ?? 0}/{archiveSelected.workDays} Gün)
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <button
@@ -2152,6 +2342,25 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                   </select>
                 </div>
                 <div>
+                  <label className="font-bold text-slate-700">Başvuru Başlangıç Tarihi</label>
+                  <input
+                    type="date"
+                    value={newTerm.applicationStartDate}
+                    onChange={(e) => setNewTerm({ ...newTerm, applicationStartDate: e.target.value })}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700">Son Başvuru Tarihi</label>
+                  <input
+                    type="date"
+                    value={newTerm.applicationDeadline}
+                    onChange={(e) => setNewTerm({ ...newTerm, applicationDeadline: e.target.value })}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                    required
+                  />
+                </div>
+                <div>
                   <label className="font-bold text-slate-700">En Erken Başlama</label>
                   <input
                     type="date"
@@ -2171,17 +2380,7 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                     required
                   />
                 </div>
-                <div>
-                  <label className="font-bold text-slate-700">Son Başvuru Tarihi</label>
-                  <input
-                    type="date"
-                    value={newTerm.applicationDeadline}
-                    onChange={(e) => setNewTerm({ ...newTerm, applicationDeadline: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                    required
-                  />
-                </div>
-                <div>
+                <div className="col-span-2">
                   <label className="font-bold text-slate-700">Rapor Teslim Tarihi</label>
                   <input
                     type="date"
@@ -2191,6 +2390,15 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                     required
                   />
                 </div>
+                <label className="col-span-2 flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={newTerm.isSaturdayAllowed}
+                    onChange={(e) => setNewTerm({ ...newTerm, isSaturdayAllowed: e.target.checked })}
+                    className="h-4 w-4 rounded text-blue-600"
+                  />
+                  Bu dönemde Cumartesi çalışmasına izin ver (Cumartesi iş günü seçilebilir)
+                </label>
               </div>
               <button
                 type="submit"
@@ -2200,6 +2408,41 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                 Staj Takvimini Güncelle / Kaydet
               </button>
             </form>
+
+            {/* Kayıtlı Staj Dönemleri Özeti */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-2.5">
+              <h4 className="font-bold text-slate-900">
+                Kayıtlı Staj Dönemleri ({terms.length})
+              </h4>
+              <div className="max-h-48 divide-y divide-slate-100 overflow-y-auto text-xs">
+                {terms.map((t) => (
+                  <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                    <div>
+                      <p className="font-bold text-slate-900">
+                        {t.name} ({t.internshipType === 'Staj1' ? 'Staj 1' : 'Staj 2'})
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        Başvuru: {t.applicationStartDate ? formatDate(t.applicationStartDate) : '-'} – {formatDate(t.applicationDeadline)} • Staj: {formatDate(t.earliestStartDate)} – {formatDate(t.latestEndDate)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+                          t.isSaturdayAllowed === false
+                            ? 'bg-rose-50 text-rose-800'
+                            : 'bg-emerald-50 text-emerald-800'
+                        }`}
+                      >
+                        {t.isSaturdayAllowed === false ? 'Cmt Hariç' : 'Cmt Serbest'}
+                      </span>
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                        {t.applicationCount} Başvuru
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {/* Yıllara Göre Onaylanan Staj Arşivi Sorgulama Kartı (Madde 12 & 17: Mevcut Dönem Kaldırıldı) */}
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-3">

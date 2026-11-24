@@ -39,9 +39,19 @@ public class Term
     public DateOnly LatestEndDate { get; set; }
 
     /// <summary>
+    /// Başvuruların açıldığı ilk tarih.
+    /// </summary>
+    public DateOnly? ApplicationStartDate { get; set; }
+
+    /// <summary>
     /// Son başvuru ve evrak teslim tarihi. Bu tarihten sonra başvuru yapılamaz.
     /// </summary>
     public DateOnly ApplicationDeadline { get; set; }
+
+    /// <summary>
+    /// Bu dönemde Cumartesi çalışmasına izin verilip verilmediği.
+    /// </summary>
+    public bool IsSaturdayAllowed { get; set; } = true;
 
     /// <summary>
     /// Staj bitiminde rapor ve sonuç evraklarının teslim edilmesi gereken son tarih.

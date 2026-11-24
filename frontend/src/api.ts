@@ -33,7 +33,14 @@ export type InternshipStatus =
   | 'Passed'
   | 'Failed'
   | 'Cancelled'
-  | 'CancellationRequested';
+  | 'CancellationRequested'
+  | 'Rejected';
+
+export type AcademicResultType =
+  | 'None'
+  | 'Successful'
+  | 'PartiallySuccessful'
+  | 'Unsuccessful';
 
 export type KptoInsuranceStatus =
   | 'Pending'
@@ -85,6 +92,8 @@ export interface TermDto {
   maxWorkDays: number;
   isActive: boolean;
   applicationCount: number;
+  applicationStartDate?: string | null;
+  isSaturdayAllowed?: boolean;
 }
 
 export interface HolidayDto {
@@ -138,12 +147,23 @@ export interface AnnouncementDto {
   createdAt: string;
 }
 
+export interface WorkDayBreakdownItemDto {
+  date: string;
+  dayName: string;
+  isWorkDay: boolean;
+  workDayNumber?: number | null;
+  reason: string;
+}
+
 export interface EndDateResponse {
   startDate: string;
   endDate: string;
   workDays: number;
   calendarDays: number;
   skippedHolidays: HolidayDto[];
+  breakdown?: WorkDayBreakdownItemDto[];
+  skippedSaturdays?: number;
+  skippedSundays?: number;
 }
 
 export interface DocumentDto {
@@ -207,6 +227,9 @@ export interface InternshipSummaryDto {
   worksOnSaturday?: boolean;
   logbookSubmittedToAdvisorAt?: string;
   logbookRevisionRequested?: boolean;
+  academicResult?: AcademicResultType;
+  acceptedDaysCount?: number;
+  subject?: string | null;
 }
 
 export interface InternshipDetailDto {
@@ -258,6 +281,12 @@ export interface InternshipDetailDto {
   advisorEmailStatus?: string;
   advisorLastLoginAt?: string;
   endingSoonNotified?: boolean;
+  subject?: string | null;
+  advisorTitle?: string | null;
+  advisorGraduatedDepartment?: string | null;
+  academicResult?: AcademicResultType;
+  acceptedDaysCount?: number;
+  advisorApprovedIpAddress?: string | null;
 }
 
 export interface KptoRowDto {
@@ -315,6 +344,7 @@ export interface CommitteeStatsDto {
   topCompanies: CompanyStatDto[];
   cancellationRequested: number;
   cancelled: number;
+  rejected?: number;
 }
 
 export interface ResetInternshipsResultDto {
@@ -357,6 +387,7 @@ export const statusLabels: Record<InternshipStatus, string> = {
   Failed: 'Kaldı (Başarısız)',
   Cancelled: 'İptal Edildi',
   CancellationRequested: 'İptal Talebi Bekliyor (Form 7)',
+  Rejected: 'Başvuru Reddedildi',
 };
 
 export const statusColors: Record<InternshipStatus, string> = {
@@ -371,6 +402,21 @@ export const statusColors: Record<InternshipStatus, string> = {
   Failed: 'bg-red-100 text-red-800 border-red-400',
   Cancelled: 'bg-gray-200 text-gray-600 border-gray-300',
   CancellationRequested: 'bg-orange-100 text-orange-800 border-orange-300',
+  Rejected: 'bg-rose-100 text-rose-800 border-rose-400',
+};
+
+export const academicResultLabels: Record<AcademicResultType, string> = {
+  None: 'Değerlendirilmedi',
+  Successful: 'Başarılı (Tam Kabul)',
+  PartiallySuccessful: 'Kısmen Başarılı',
+  Unsuccessful: 'Başarısız (Kaldı)',
+};
+
+export const academicResultColors: Record<AcademicResultType, string> = {
+  None: 'bg-slate-100 text-slate-700 border-slate-300',
+  Successful: 'bg-emerald-100 text-emerald-800 border-emerald-400',
+  PartiallySuccessful: 'bg-amber-100 text-amber-900 border-amber-400',
+  Unsuccessful: 'bg-rose-100 text-rose-800 border-rose-400',
 };
 
 export const docTypeLabels: Record<DocumentType, string> = {

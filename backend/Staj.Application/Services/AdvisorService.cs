@@ -42,7 +42,7 @@ public class AdvisorService
     /// <summary>
     /// Staj sonunda "Staj defterini gördüm ve inceledim" onayını verir. Eksik deftere onay açılmaz (Madde 16).
     /// </summary>
-    public async Task<InternshipDetailDto> ApproveLogbookAsync(Guid id, CancellationToken ct = default)
+    public async Task<InternshipDetailDto> ApproveLogbookAsync(Guid id, string? ipAddress = null, CancellationToken ct = default)
     {
         var i = await _internships.LoadAsync(id, ct);
         if (_currentUser.Role == UserRole.CompanyAdvisor && i.AdvisorId != _currentUser.UserId)
@@ -54,12 +54,13 @@ public class AdvisorService
 
         i.AdvisorLogbookApproved = true;
         i.AdvisorApprovedAt = DateTime.UtcNow;
+        i.AdvisorApprovedIpAddress = string.IsNullOrWhiteSpace(ipAddress) ? null : ipAddress.Trim();
         i.LogbookRevisionRequested = false;
         i.LogbookRevisionNote = null;
         i.AdvisorEmailStatus = $"Sorumlu mühendis ({i.AdvisorName}) staj defterini inceledi ve onayladı ({DateTime.Now:dd.MM.yyyy HH:mm}).";
         i.UpdatedAt = DateTime.UtcNow;
         _notify.ToUser(i.StudentId, "Staj Defteriniz Onaylandı", $"Sorumlu mühendis ({i.AdvisorName}) sanal staj defterinizi inceledi ve onayladı.", NotificationType.Success, i.Id);
-        _notify.Audit("Advisor.ApproveLogbook", "Internship", i.Id);
+        _notify.Audit("Advisor.ApproveLogbook", "Internship", i.Id, $"IP: {i.AdvisorApprovedIpAddress ?? "-"}");
         await _db.SaveChangesAsync(ct);
         return await _internships.ToDetailAsync(i, ct);
     }

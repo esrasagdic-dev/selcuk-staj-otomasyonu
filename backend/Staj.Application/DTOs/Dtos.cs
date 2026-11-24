@@ -40,13 +40,15 @@ public record CreateStaffRequest(string Email, string FullName, UserRole Role, s
 public record TermDto(
     Guid Id, string Name, string AcademicYear, InternshipType InternshipType,
     DateOnly EarliestStartDate, DateOnly LatestEndDate, DateOnly ApplicationDeadline, DateOnly ReportDeadline,
-    int MinWorkDays, int MaxWorkDays, bool IsActive, int ApplicationCount);
+    int MinWorkDays, int MaxWorkDays, bool IsActive, int ApplicationCount,
+    DateOnly? ApplicationStartDate = null, bool IsSaturdayAllowed = true);
 
 /// <summary>Staj dönemi oluşturma / güncelleme isteği.</summary>
 public record TermUpsertRequest(
     string Name, string AcademicYear, InternshipType InternshipType,
     DateOnly EarliestStartDate, DateOnly LatestEndDate, DateOnly ApplicationDeadline, DateOnly ReportDeadline,
-    int MinWorkDays, int MaxWorkDays, bool IsActive);
+    int MinWorkDays, int MaxWorkDays, bool IsActive,
+    DateOnly? ApplicationStartDate = null, bool IsSaturdayAllowed = true);
 
 /// <summary>Resmi tatil.</summary>
 public record HolidayDto(Guid Id, DateOnly Date, string Name);
@@ -86,14 +88,20 @@ public record AnnouncementUpsertRequest(string Title, string Content, string Cat
 /// <summary>Bitiş tarihi hesaplama isteği.</summary>
 public record CalculateEndDateRequest(DateOnly StartDate, int WorkDays, bool WorksOnSaturday = false);
 
+/// <summary>Gün-gün iş günü ve tatil döküm satırı.</summary>
+public record WorkDayBreakdownItemDto(DateOnly Date, string DayName, bool IsWorkDay, int? WorkDayNumber, string Reason);
+
 /// <summary>Bitiş tarihi hesaplama sonucu (atlanan tatillerle birlikte).</summary>
-public record EndDateResponse(DateOnly StartDate, DateOnly EndDate, int WorkDays, int CalendarDays, List<HolidayDto> SkippedHolidays);
+public record EndDateResponse(
+    DateOnly StartDate, DateOnly EndDate, int WorkDays, int CalendarDays, List<HolidayDto> SkippedHolidays,
+    List<WorkDayBreakdownItemDto>? Breakdown = null, int SkippedSaturdays = 0, int SkippedSundays = 0);
 
 /// <summary>Staj başvurusu oluşturma / güncelleme isteği.</summary>
 public record InternshipUpsertRequest(
     Guid TermId, Guid? CompanyId, CompanyCreateRequest? NewCompany,
     string AdvisorName, string AdvisorEmail, int WorkDays, DateOnly StartDate,
-    string? Department, bool ReceivesSalary, bool WorksOnSaturday = false);
+    string? Department, bool ReceivesSalary, bool WorksOnSaturday = false,
+    string? Subject = null, string? AdvisorTitle = null, string? AdvisorGraduatedDepartment = null);
 
 /// <summary>Staj listesi satırı.</summary>
 public record InternshipSummaryDto(
@@ -106,7 +114,10 @@ public record InternshipSummaryDto(
     Guid? Form7DocumentId = null, string? Form7FileName = null,
     bool WorksOnSaturday = false,
     DateTime? LogbookSubmittedToAdvisorAt = null,
-    bool LogbookRevisionRequested = false);
+    bool LogbookRevisionRequested = false,
+    AcademicResultType AcademicResult = AcademicResultType.None,
+    int AcceptedDaysCount = 0,
+    string? Subject = null);
 
 /// <summary>Yüklü belge bilgisi.</summary>
 public record DocumentDto(Guid Id, DocumentType Type, string OriginalFileName, long SizeBytes, DateTime UploadedAt);
@@ -131,8 +142,8 @@ public record Form7Request(string Reason, string? EducationType = "NÖ", string?
 /// <summary>Not içeren genel karar isteği (revize, red vb.).</summary>
 public record NoteRequest(string? Note);
 
-/// <summary>Staj sonu değerlendirme isteği.</summary>
-public record EvaluateRequest(bool Passed, string? Note);
+/// <summary>Staj sonu değerlendirme isteği (3 kademeli).</summary>
+public record EvaluateRequest(bool Passed, string? Note, AcademicResultType? AcademicResult = null, int? AcceptedDaysCount = null);
 
 /// <summary>Staj detay bilgisi (tüm paneller ortak kullanır).</summary>
 public record InternshipDetailDto(
@@ -156,7 +167,13 @@ public record InternshipDetailDto(
     DateTime? AdvisorEmailSentAt = null,
     string? AdvisorEmailStatus = null,
     DateTime? AdvisorLastLoginAt = null,
-    bool EndingSoonNotified = false);
+    bool EndingSoonNotified = false,
+    string? Subject = null,
+    string? AdvisorTitle = null,
+    string? AdvisorGraduatedDepartment = null,
+    AcademicResultType AcademicResult = AcademicResultType.None,
+    int AcceptedDaysCount = 0,
+    string? AdvisorApprovedIpAddress = null);
 
 // ============================================================
 //  KPTO
@@ -183,7 +200,7 @@ public record NotificationDto(Guid Id, NotificationType Type, string Title, stri
 public record CommitteeStatsDto(
     int TotalApplications, int PendingReview, int Approved, int InProgress, int AwaitingEvaluation,
     int Passed, int Failed, int PendingLeaves, List<CompanyStatDto> TopCompanies,
-    int CancellationRequested = 0, int Cancelled = 0);
+    int CancellationRequested = 0, int Cancelled = 0, int Rejected = 0);
 
 /// <summary>Test staj verilerini sıfırlama sonucu.</summary>
 public record ResetInternshipsResultDto(

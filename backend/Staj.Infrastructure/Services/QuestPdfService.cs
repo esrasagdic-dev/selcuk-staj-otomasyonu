@@ -69,7 +69,18 @@ public class QuestPdfService : IPdfService
             ? "Teknoloji Fakültesi / Bilgisayar Mühendisliği"
             : $"Teknoloji Fakültesi - {i.Student.Department}";
         var studentNo = i.Student?.StudentNo ?? "-";
-        var workTopic = string.IsNullOrWhiteSpace(i.Department) ? "Yazılım / Bilgisayar Mühendisliği Uygulamaları" : i.Department;
+        var workTopic = !string.IsNullOrWhiteSpace(i.Subject)
+            ? i.Subject!
+            : (!string.IsNullOrWhiteSpace(i.Department) ? i.Department! : "Yazılım / Bilgisayar Mühendisliği Uygulamaları");
+        var advisorGradDept = !string.IsNullOrWhiteSpace(i.AdvisorGraduatedDepartment)
+            ? i.AdvisorGraduatedDepartment!
+            : (!string.IsNullOrWhiteSpace(i.Department) ? i.Department! : "Mühendislik / İlgili Birim");
+        var advisorRoleText = !string.IsNullOrWhiteSpace(i.AdvisorTitle)
+            ? $"{i.AdvisorTitle} ({i.AdvisorEmail})"
+            : $"İşyeri Staj Danışmanı / Yetkilisi ({i.AdvisorEmail})";
+        var advisorSignName = !string.IsNullOrWhiteSpace(i.AdvisorTitle)
+            ? $"{i.AdvisorTitle} — {i.AdvisorName}"
+            : i.AdvisorName;
         var companyAddress = string.Join(" / ",
             new[] { i.Company?.Address, i.Company?.City }.Where(s => !string.IsNullOrWhiteSpace(s)));
         var companyContact = string.Join(" / ",
@@ -278,8 +289,8 @@ public class QuestPdfService : IPdfService
                     SectionBanner(t, "ÖĞRENCİDEN SORUMLU PERSONELİN");
 
                     FormRow3Col(t, "Adı Soyadı", $":   {i.AdvisorName}");
-                    FormRow3Col(t, "Mezun Olduğu Fakülte ve Bölüm Bilgileri", $":   {(string.IsNullOrWhiteSpace(i.Department) ? "Mühendislik / İlgili Birim" : i.Department)}");
-                    FormRow3Col(t, "Görevi", $":   İşyeri Staj Danışmanı / Yetkilisi ({i.AdvisorEmail})");
+                    FormRow3Col(t, "Mezun Olduğu Fakülte ve Bölüm Bilgileri", $":   {advisorGradDept}");
+                    FormRow3Col(t, "Görevi", $":   {advisorRoleText}");
 
                     // 7. İŞVEREN VEYA YETKİLİSİNİN ONAYI
                     t.Cell().ColumnSpan(3).Border(0.75f).BorderColor(Colors.Black).Padding(6).Column(col =>
@@ -294,7 +305,7 @@ public class QuestPdfService : IPdfService
                             r.ConstantItem(210).Column(ic =>
                             {
                                 ic.Item().AlignCenter().Text("İŞVEREN veya YETKİLİSİNİN").Bold().FontSize(8.5f);
-                                ic.Item().AlignCenter().Text($"(Unvanı) Adı Soyadı: {i.AdvisorName}").FontSize(8f);
+                                ic.Item().AlignCenter().Text($"(Unvanı) Adı Soyadı: {advisorSignName}").FontSize(8f);
                                 ic.Item().PaddingTop(14).AlignCenter().Text("Mühür ve İmza").Bold().FontSize(8f).FontColor(Colors.Grey.Darken2);
                             });
                         });

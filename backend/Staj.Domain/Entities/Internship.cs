@@ -119,6 +119,36 @@ public class Internship
     public string? Department { get; set; }
 
     /// <summary>
+    /// Staj konusu / yapılacak çalışma özeti.
+    /// </summary>
+    public string? Subject { get; set; }
+
+    /// <summary>
+    /// Sorumlu mühendis / şirket yetkilisinin unvanı veya görevi.
+    /// </summary>
+    public string? AdvisorTitle { get; set; }
+
+    /// <summary>
+    /// Sorumlu mühendis / şirket yetkilisinin mezun olduğu fakülte ve bölüm.
+    /// </summary>
+    public string? AdvisorGraduatedDepartment { get; set; }
+
+    /// <summary>
+    /// Komisyon tarafından staj sonunda verilen 3 kademeli akademik değerlendirme sonucu.
+    /// </summary>
+    public AcademicResultType AcademicResult { get; set; } = AcademicResultType.None;
+
+    /// <summary>
+    /// Komisyon tarafından kabul edilen iş günü sayısı.
+    /// </summary>
+    public int AcceptedDaysCount { get; set; }
+
+    /// <summary>
+    /// Sorumlu mühendisin sanal defteri onayladığı IP adresi damgası.
+    /// </summary>
+    public string? AdvisorApprovedIpAddress { get; set; }
+
+    /// <summary>
     /// Komisyonun revize talebi gerekçesi.
     /// </summary>
     public string? RevisionNote { get; set; }

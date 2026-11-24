@@ -179,6 +179,47 @@ public class CommitteeService
     }
 
     /// <summary>
+    /// Başvuruyu gerekçeli olarak kesin reddeder. Öğrenci bu statüden sonra yeni başvuru oluşturabilir.
+    /// </summary>
+    public async Task<InternshipDetailDto> RejectAsync(Guid id, string? note, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(note))
+            throw AppException.BadRequest("Başvuru reddi için gerekçe yazılmalıdır.");
+
+        var i = await _internships.LoadAsync(id, ct);
+        if (i.Status is not (InternshipStatus.Submitted or InternshipStatus.RevisionRequested or InternshipStatus.ApprovedByCommittee))
+            throw AppException.BadRequest("Bu aşamadaki başvuru reddedilemez (aktif stajlar için Form 7 iptal sürecini kullanınız).");
+
+        var trimmedNote = note.Trim();
+        var wasApproved = i.Status == InternshipStatus.ApprovedByCommittee;
+        if (wasApproved)
+        {
+            i.KptoStatus = KptoInsuranceStatus.InsuranceNotStarted;
+            i.KptoNote = "Komisyon başvuruyu reddetti: " + trimmedNote;
+            _notify.ToRole(UserRole.KptoOfficer, "Başvuru Reddedildi",
+                $"{i.Student.FullName} başvurusu komisyon tarafından reddedildi, sigorta başlatmayınız.",
+                NotificationType.Warning, i.Id);
+        }
+
+        i.Status = InternshipStatus.Rejected;
+        i.RevisionNote = trimmedNote;
+        i.EvaluationNote = trimmedNote;
+        i.AcademicResult = AcademicResultType.Unsuccessful;
+        i.AcceptedDaysCount = 0;
+        i.ReviewedById = _currentUser.UserId;
+        i.EvaluatedAt = DateTime.UtcNow;
+        i.UpdatedAt = DateTime.UtcNow;
+
+        _notify.ToUser(i.StudentId, "Staj Başvurunuz Reddedildi", trimmedNote, NotificationType.Warning, i.Id);
+        _notify.Audit("Internship.Reject", nameof(Internship), i.Id, trimmedNote);
+        await _db.SaveChangesAsync(ct);
+
+        await _notify.TryEmailAsync(i.Student.Email, "Staj Başvurunuz Reddedildi",
+            $"<p>Sayın {i.Student.FullName},</p><p>{i.Type.ToTurkish()} başvurunuz Staj Komisyonu tarafından aşağıdaki gerekçe ile reddedilmiştir:</p><blockquote>{System.Net.WebUtility.HtmlEncode(trimmedNote)}</blockquote><p>Gerekli düzenlemeleri yaptıktan sonra yeni bir staj başvurusu oluşturabilirsiniz.</p>", ct);
+        return await _internships.ToDetailAsync(i, ct);
+    }
+
+    /// <summary>
     /// Öğrencinin ilettiği Form 7 staj iptal talebini onaylar ve stajı iptal eder. Sigortası başlamışsa KPTO bilgilendirilir.
     /// </summary>
     public async Task<InternshipDetailDto> CancelAsync(Guid id, string? note, CancellationToken ct = default)
@@ -235,38 +276,84 @@ public class CommitteeService
     }
 
     /// <summary>
-    /// Staj sonu değerlendirmesi: "Geçti" veya "Kaldı".
-    /// "Geçti" için şirket yetkilisinin defter onayı ve imzalı sonuç formu gereklidir.
+    /// Staj sonu değerlendirmesi (3 kademeli): Başarılı (Tam Kabul), Kısmen Başarılı (Belirli Gün Kabulü) veya Başarısız (Kaldı).
+    /// Başarılı kabulü için şirket yetkilisinin defter onayı ve imzalı sonuç formu gereklidir.
     /// </summary>
     public async Task<InternshipDetailDto> EvaluateAsync(Guid id, EvaluateRequest req, CancellationToken ct = default)
     {
         var i = await _internships.LoadAsync(id, ct);
         if (i.Status is not (InternshipStatus.CompletedPendingReview or InternshipStatus.InProgress))
             throw AppException.BadRequest("Yalnızca tamamlanmış stajlar değerlendirilebilir.");
-        if (req.Passed)
+
+        var result = req.AcademicResult.HasValue && req.AcademicResult.Value != AcademicResultType.None
+            ? req.AcademicResult.Value
+            : (req.Passed ? AcademicResultType.Successful : AcademicResultType.Unsuccessful);
+
+        if (result == AcademicResultType.Successful)
         {
             if (i.Status == InternshipStatus.InProgress) throw AppException.BadRequest("Staj süresi henüz dolmadı.");
             if (i.LogbookEntries.Count < i.WorkDays)
                 throw AppException.BadRequest($"Eksik staj defteriyle staj onaylanamaz! Öğrenci {i.WorkDays} iş gününün tamamını doldurmalıdır (Mevcut: {i.LogbookEntries.Count} / {i.WorkDays} gün).");
             if (!i.AdvisorLogbookApproved) throw AppException.BadRequest("Şirket yetkilisi henüz sanal defteri onaylamadı.");
             if (!i.Documents.Any(d => d.Type == DocumentType.ResultForm)) throw AppException.BadRequest("Şirketin imzalı sonuç formu yüklenmemiş.");
+
+            i.Status = InternshipStatus.Passed;
+            i.AcademicResult = AcademicResultType.Successful;
+            i.AcceptedDaysCount = i.WorkDays;
         }
-        else if (string.IsNullOrWhiteSpace(req.Note))
+        else if (result == AcademicResultType.PartiallySuccessful)
         {
-            throw AppException.BadRequest("\"Kaldı\" kararı için gerekçe yazılmalıdır.");
+            if (i.Status == InternshipStatus.InProgress) throw AppException.BadRequest("Staj süresi henüz dolmadı.");
+            if (!i.Documents.Any(d => d.Type == DocumentType.ResultForm)) throw AppException.BadRequest("Şirketin imzalı sonuç formu yüklenmemiş.");
+            var accepted = req.AcceptedDaysCount ?? 0;
+            if (accepted < 1 || accepted >= i.WorkDays)
+                throw AppException.BadRequest($"Kısmen başarılı değerlendirmesi için kabul edilen gün sayısı 1 ile {i.WorkDays - 1} arasında olmalıdır.");
+            if (string.IsNullOrWhiteSpace(req.Note))
+                throw AppException.BadRequest("\"Kısmen Başarılı\" kararı için gerekçe / açıklama yazılmalıdır.");
+
+            i.Status = InternshipStatus.Passed;
+            i.AcademicResult = AcademicResultType.PartiallySuccessful;
+            i.AcceptedDaysCount = accepted;
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(req.Note))
+                throw AppException.BadRequest("\"Kaldı / Başarısız\" kararı için gerekçe yazılmalıdır.");
+
+            i.Status = InternshipStatus.Failed;
+            i.AcademicResult = AcademicResultType.Unsuccessful;
+            i.AcceptedDaysCount = 0;
         }
 
-        i.Status = req.Passed ? InternshipStatus.Passed : InternshipStatus.Failed;
-        i.EvaluationNote = req.Note;
+        var isPassedOutcome = result is AcademicResultType.Successful or AcademicResultType.PartiallySuccessful;
+        var resultLabel = result.ToTurkish();
+        var daySummary = result == AcademicResultType.PartiallySuccessful
+            ? $" ({i.AcceptedDaysCount} / {i.WorkDays} İş Günü Kabul Edildi)"
+            : result == AcademicResultType.Successful
+                ? $" ({i.WorkDays} / {i.WorkDays} İş Günü)"
+                : "";
+
+        i.EvaluationNote = string.IsNullOrWhiteSpace(req.Note) ? null : req.Note.Trim();
         i.EvaluatedAt = DateTime.UtcNow;
         i.ReviewedById = _currentUser.UserId;
         i.UpdatedAt = DateTime.UtcNow;
-        _notify.ToUser(i.StudentId, req.Passed ? "Stajınız Başarılı (Geçti)" : "Stajınız Başarısız (Kaldı)",
-            req.Note ?? (req.Passed ? "Tebrikler, stajınız kabul edildi." : ""), req.Passed ? NotificationType.Success : NotificationType.Warning, i.Id);
-        _notify.Audit("Internship.Evaluate", nameof(Internship), i.Id, req.Passed ? "Geçti" : "Kaldı");
+
+        var notifTitle = result switch
+        {
+            AcademicResultType.Successful => "Stajınız Başarılı (Geçti)",
+            AcademicResultType.PartiallySuccessful => $"Stajınız Kısmen Başarılı ({i.AcceptedDaysCount}/{i.WorkDays} Gün)",
+            _ => "Stajınız Başarısız (Kaldı)"
+        };
+        var notifBody = string.IsNullOrWhiteSpace(i.EvaluationNote)
+            ? $"Staj değerlendirmeniz {resultLabel}{daySummary} olarak sonuçlandırıldı."
+            : $"{resultLabel}{daySummary} — {i.EvaluationNote}";
+
+        _notify.ToUser(i.StudentId, notifTitle, notifBody, isPassedOutcome ? NotificationType.Success : NotificationType.Warning, i.Id);
+        _notify.Audit("Internship.Evaluate", nameof(Internship), i.Id, $"{resultLabel}{daySummary}");
         await _db.SaveChangesAsync(ct);
         await _notify.TryEmailAsync(i.Student.Email, "Staj Değerlendirme Sonucu",
-            $"<p>Sayın {i.Student.FullName},</p><p>{i.Type.ToTurkish()} değerlendirme sonucunuz: <b>{(req.Passed ? "GEÇTİ" : "KALDI")}</b></p>", ct);
+            $"<p>Sayın {i.Student.FullName},</p><p>{i.Type.ToTurkish()} değerlendirme sonucunuz: <b>{resultLabel}{daySummary}</b></p>" +
+            (string.IsNullOrWhiteSpace(i.EvaluationNote) ? "" : $"<blockquote>{System.Net.WebUtility.HtmlEncode(i.EvaluationNote)}</blockquote>"), ct);
         return await _internships.ToDetailAsync(i, ct);
     }
 
@@ -414,7 +501,7 @@ public class CommitteeService
             C(InternshipStatus.ApprovedByCommittee) + C(InternshipStatus.InsuranceStarted),
             C(InternshipStatus.InProgress), C(InternshipStatus.CompletedPendingReview),
             C(InternshipStatus.Passed), C(InternshipStatus.Failed), pendingLeaves, top,
-            C(InternshipStatus.CancellationRequested), C(InternshipStatus.Cancelled));
+            C(InternshipStatus.CancellationRequested), C(InternshipStatus.Cancelled), C(InternshipStatus.Rejected));
     }
 
     /// <summary>

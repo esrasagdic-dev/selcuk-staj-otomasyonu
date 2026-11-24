@@ -58,5 +58,10 @@ public enum InternshipStatus
     /// <summary>
     /// Öğrenci Form 7 (Staj İptal Formu) doldurarak staj iptal talebini komisyona göndermiştir; komisyon incelemesi beklenmektedir.
     /// </summary>
-    CancellationRequested = 10
+    CancellationRequested = 10,
+
+    /// <summary>
+    /// Komisyon başvuruyu gerekçeli olarak reddetmiştir; öğrenci yeni başvuru yapabilir.
+    /// </summary>
+    Rejected = 11
 }

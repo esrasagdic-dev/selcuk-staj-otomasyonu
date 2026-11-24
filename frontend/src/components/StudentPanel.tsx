@@ -6,8 +6,10 @@ import {
   Building2,
   Calendar,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Clock,
   Download,
   Eye,
@@ -28,6 +30,8 @@ import {
   X,
 } from 'lucide-react';
 import {
+  academicResultColors,
+  academicResultLabels,
   api,
   docTypeLabels,
   downloadBlob,
@@ -97,12 +101,16 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
   const [advisorName, setAdvisorName] = useState('');
   const [advisorEmail, setAdvisorEmail] = useState('');
   const [department, setDepartment] = useState('');
+  const [subject, setSubject] = useState('');
+  const [advisorTitle, setAdvisorTitle] = useState('');
+  const [advisorGraduatedDepartment, setAdvisorGraduatedDepartment] = useState('');
   const [workDays, setWorkDays] = useState(20);
   const [startDate, setStartDate] = useState('2026-07-01');
   const [worksOnSaturday, setWorksOnSaturday] = useState(false);
   const [receivesSalary, setReceivesSalary] = useState(false);
   const [calcPreview, setCalcPreview] = useState<EndDateResponse | null>(null);
   const [calcError, setCalcError] = useState<string | null>(null);
+  const [showBreakdown, setShowBreakdown] = useState(false);
 
   // Sanal Staj Defteri (Word Rapor Görünümü State)
   const [wordViewMode, setWordViewMode] = useState<'cover' | 'intro' | 'page'>('page');
@@ -144,6 +152,10 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
   }, [user.hasAcceptedGuide]);
 
   const selected = internships.find((x) => x.id === selectedId) ?? internships[0] ?? null;
+  const selectedTerm =
+    terms.find((t) => t.id === termId) ??
+    terms.find((t) => t.internshipType === selectedInternshipType) ??
+    null;
   const isApprovedInternship = selected ? APPROVED_STATUSES.includes(selected.status) : false;
   const verifiedStudentNo =
     user.studentNo || (user.email.includes('@') ? user.email.split('@')[0] : '');
@@ -236,18 +248,19 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
   useEffect(() => {
     if (!showForm || !startDate || !workDays) return;
     setCalcError(null);
+    const effectiveSaturday = selectedTerm?.isSaturdayAllowed === false ? false : worksOnSaturday;
     api
       .post<EndDateResponse>('/workdays/calculate', {
         startDate,
         workDays,
-        worksOnSaturday,
+        worksOnSaturday: effectiveSaturday,
       })
       .then((r) => setCalcPreview(r.data))
       .catch((err) => {
         setCalcPreview(null);
         setCalcError(getErrorMessage(err));
       });
-  }, [showForm, startDate, workDays, worksOnSaturday]);
+  }, [showForm, startDate, workDays, worksOnSaturday, selectedTerm?.isSaturdayAllowed]);
 
   const handleAcceptGuide = async () => {
     try {
@@ -264,6 +277,9 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
     const matchingTerm = terms.find((t) => t.internshipType === type) ?? terms[0];
     if (matchingTerm) {
       setTermId(matchingTerm.id);
+      if (matchingTerm.isSaturdayAllowed === false) {
+        setWorksOnSaturday(false);
+      }
     }
   };
 
@@ -280,10 +296,14 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
     setAdvisorName('');
     setAdvisorEmail('');
     setDepartment('Yazılım Geliştirme / Ar-Ge');
+    setSubject('');
+    setAdvisorTitle('');
+    setAdvisorGraduatedDepartment('');
     setWorkDays(20);
     setStartDate('2026-07-01');
     setWorksOnSaturday(false);
     setReceivesSalary(false);
+    setShowBreakdown(false);
     setShowForm(true);
   };
 
@@ -297,10 +317,15 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
     setAdvisorName(i.advisorName);
     setAdvisorEmail(i.advisorEmail);
     setDepartment(i.department ?? '');
+    setSubject(i.subject ?? '');
+    setAdvisorTitle(i.advisorTitle ?? '');
+    setAdvisorGraduatedDepartment(i.advisorGraduatedDepartment ?? '');
     setWorkDays(i.workDays);
     setStartDate(i.startDate);
-    setWorksOnSaturday(i.worksOnSaturday ?? false);
+    const matchingTerm = terms.find((t) => t.id === i.termId);
+    setWorksOnSaturday(matchingTerm?.isSaturdayAllowed === false ? false : i.worksOnSaturday ?? false);
     setReceivesSalary(i.receivesSalary);
+    setShowBreakdown(false);
     setShowForm(true);
   };
 
@@ -312,6 +337,7 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
       terms.find((t) => t.internshipType === selectedInternshipType)?.id ||
       terms[0]?.id ||
       '';
+    const effectiveSaturday = selectedTerm?.isSaturdayAllowed === false ? false : worksOnSaturday;
     const payload = {
       termId: resolvedTermId,
       companyId: useNewCompany ? null : companyId || null,
@@ -322,7 +348,10 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
       startDate,
       department,
       receivesSalary,
-      worksOnSaturday,
+      worksOnSaturday: effectiveSaturday,
+      subject: subject.trim() || null,
+      advisorTitle: advisorTitle.trim() || null,
+      advisorGraduatedDepartment: advisorGraduatedDepartment.trim() || null,
     };
     try {
       const res = editingId
@@ -1207,24 +1236,79 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700">
+                    Staj Konusu (Form 2)
+                  </label>
+                  <input
+                    type="text"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="Örn: Web Tabanlı Stok Takip Sistemi"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700">
+                    Sorumlu Mühendis Unvanı / Görevi
+                  </label>
+                  <input
+                    type="text"
+                    value={advisorTitle}
+                    onChange={(e) => setAdvisorTitle(e.target.value)}
+                    placeholder="Örn: Kıdemli Yazılım Mühendisi"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700">
+                    Sorumlu Müh. Mezuniyet (Fakülte/Bölüm)
+                  </label>
+                  <input
+                    type="text"
+                    value={advisorGraduatedDepartment}
+                    onChange={(e) => setAdvisorGraduatedDepartment(e.target.value)}
+                    placeholder="Örn: Selçuk Üni. Bilgisayar Müh."
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
               {/* Otomatik Gün Hesaplayıcı + MADDE 2: STAJYER CUMARTESİ ÇALIŞIYOR MU KUTUSU */}
               <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4 space-y-3">
-                <p className="text-xs font-bold text-blue-900">
-                  3. Otomatik İş Günü, Cumartesi Çalışma Kontrolü ve Bitiş Tarihi Hesaplayıcı
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-blue-900">
+                    3. Otomatik İş Günü, Cumartesi Çalışma Kontrolü ve Bitiş Tarihi Hesaplayıcı
+                  </p>
+                  {selectedTerm && (
+                    <span className="text-[11px] font-semibold text-blue-800">
+                      Dönem Aralığı: {formatDate(selectedTerm.earliestStartDate)} – {formatDate(selectedTerm.latestEndDate)}
+                    </span>
+                  )}
+                </div>
 
                 {/* Madde 2: Cumartesi Çalışıyor mu Kontrol Kutusu */}
-                <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-blue-300 bg-white p-3 text-xs font-bold text-slate-900 shadow-2xs">
+                <label
+                  className={`flex items-center gap-2.5 rounded-xl border border-blue-300 bg-white p-3 text-xs font-bold text-slate-900 shadow-2xs ${
+                    selectedTerm?.isSaturdayAllowed === false ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
+                  }`}
+                >
                   <input
                     type="checkbox"
-                    checked={worksOnSaturday}
+                    checked={selectedTerm?.isSaturdayAllowed === false ? false : worksOnSaturday}
+                    disabled={selectedTerm?.isSaturdayAllowed === false}
                     onChange={(e) => setWorksOnSaturday(e.target.checked)}
                     className="h-4 w-4 rounded text-blue-600"
                   />
                   <span>
                     Stajyer Cumartesi Günleri Çalışıyor mu?{' '}
                     <span className="font-normal text-slate-600">
-                      ({worksOnSaturday ? 'Evet — Cumartesi günleri iş günü hesabına dahil edilir' : 'Hayır — Cumartesi ve Pazar tatil sayılır'})
+                      {selectedTerm?.isSaturdayAllowed === false
+                        ? '(Bu staj döneminde Cumartesi çalışmasına izin verilmemektedir)'
+                        : worksOnSaturday
+                        ? '(Evet — Cumartesi günleri iş günü hesabına dahil edilir)'
+                        : '(Hayır — Cumartesi ve Pazar tatil sayılır)'}
                     </span>
                   </span>
                 </label>
@@ -1279,6 +1363,75 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                     {calcPreview.skippedHolidays
                       .map((h) => `${h.name} (${formatDate(h.date)})`)
                       .join(', ')}
+                  </div>
+                )}
+
+                {calcPreview && (
+                  <div className="space-y-2 border-t border-blue-200 pt-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                        <span className="rounded bg-white px-2 py-0.5 text-slate-700 border border-blue-200">
+                          Takvim Günü: <b>{calcPreview.calendarDays}</b>
+                        </span>
+                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-900 border border-emerald-300">
+                          İş Günü: <b>{calcPreview.workDays}</b>
+                        </span>
+                        <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-700 border border-slate-300">
+                          Atlanan Cmt/Paz: <b>{(calcPreview.skippedSaturdays ?? 0)} / {(calcPreview.skippedSundays ?? 0)}</b>
+                        </span>
+                        <span className="rounded bg-rose-50 px-2 py-0.5 text-rose-800 border border-rose-200">
+                          Resmî Tatil: <b>{calcPreview.skippedHolidays.length}</b>
+                        </span>
+                      </div>
+                      {calcPreview.breakdown && calcPreview.breakdown.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowBreakdown((prev) => !prev)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-[11px] font-bold text-blue-900 hover:bg-blue-100"
+                        >
+                          {showBreakdown ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          {showBreakdown
+                            ? 'Gün-Gün Dökümü Gizle'
+                            : `Gün-Gün İş Günü ve Tatil Dökümünü Göster (${calcPreview.breakdown.length} Gün)`}
+                        </button>
+                      )}
+                    </div>
+
+                    {showBreakdown && calcPreview.breakdown && calcPreview.breakdown.length > 0 && (
+                      <div className="max-h-56 overflow-y-auto rounded-lg border border-blue-200 bg-white">
+                        <table className="w-full text-left text-[11px]">
+                          <thead className="sticky top-0 bg-slate-100 font-bold text-slate-700">
+                            <tr>
+                              <th className="px-2.5 py-1.5">Tarih</th>
+                              <th className="px-2.5 py-1.5">Gün</th>
+                              <th className="px-2.5 py-1.5">İş Günü No</th>
+                              <th className="px-2.5 py-1.5">Durum / Açıklama</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {calcPreview.breakdown.map((row) => (
+                              <tr
+                                key={row.date}
+                                className={
+                                  row.isWorkDay
+                                    ? 'bg-emerald-50/40 text-emerald-950'
+                                    : row.reason.startsWith('Resmî Tatil')
+                                    ? 'bg-rose-50 text-rose-900 font-semibold'
+                                    : 'bg-slate-50/70 text-slate-500'
+                                }
+                              >
+                                <td className="px-2.5 py-1 font-medium">{formatDate(row.date)}</td>
+                                <td className="px-2.5 py-1">{row.dayName}</td>
+                                <td className="px-2.5 py-1 font-bold">
+                                  {row.workDayNumber ? `${row.workDayNumber}. İş Günü` : '—'}
+                                </td>
+                                <td className="px-2.5 py-1">{row.reason}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1338,11 +1491,12 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                 <thead className="bg-slate-50 font-bold text-slate-600 uppercase">
                   <tr>
                     <th className="px-4 py-3">Staj Türü / Takvim</th>
+                    <th className="px-4 py-3">Başvuru Başlangıcı</th>
                     <th className="px-4 py-3">Son Başvuru Tarihi</th>
                     <th className="px-4 py-3">En Erken Staj Başlama</th>
                     <th className="px-4 py-3">En Geç Staj Bitiş</th>
                     <th className="px-4 py-3">Defter & Rapor Son Teslim</th>
-                    <th className="px-4 py-3">İş Günü Süresi</th>
+                    <th className="px-4 py-3">İş Günü / Cumartesi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -1350,6 +1504,9 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                     <tr key={t.id} className="hover:bg-slate-50">
                       <td className="px-4 py-3 font-bold text-blue-950">
                         {t.internshipType === 'Staj1' ? 'STAJ 1' : 'STAJ 2'} ({t.academicYear})
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-700">
+                        {t.applicationStartDate ? formatDate(t.applicationStartDate) : '-'}
                       </td>
                       <td className="px-4 py-3 font-semibold text-rose-700">
                         {formatDate(t.applicationDeadline)}
@@ -1364,7 +1521,10 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                         {formatDate(t.reportDeadline)}
                       </td>
                       <td className="px-4 py-3 font-bold text-slate-700">
-                        {t.minWorkDays} - {t.maxWorkDays} İş Günü
+                        {t.minWorkDays} - {t.maxWorkDays} Gün •{' '}
+                        <span className={t.isSaturdayAllowed === false ? 'text-rose-700' : 'text-emerald-700'}>
+                          {t.isSaturdayAllowed === false ? 'Cmt Hariç' : 'Cmt Serbest'}
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -1585,6 +1745,82 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                   </div>
                 )}
 
+                {/* Komisyon Başvuru Red Uyarısı */}
+                {selected.status === 'Rejected' && (
+                  <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-rose-400 bg-rose-50 p-4 text-sm text-rose-950 shadow-xs">
+                    <div>
+                      <div className="flex items-center gap-2 font-extrabold text-rose-900">
+                        <AlertCircle className="h-5 w-5 text-rose-600" />
+                        Staj Başvurunuz Komisyon Tarafından Reddedildi:
+                      </div>
+                      <p className="mt-1 text-xs font-semibold text-rose-800">
+                        <b>Red Gerekçesi:</b> {selected.evaluationNote || selected.revisionNote || 'Gerekçe belirtilmedi.'}
+                      </p>
+                      <p className="mt-0.5 text-xs text-rose-700">
+                        Şartları yeniden düzenleyerek yeni bir staj başvurusu oluşturabilirsiniz.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openNewApplication}
+                      className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700"
+                    >
+                      Yeni Staj Başvurusu Oluştur →
+                    </button>
+                  </div>
+                )}
+
+                {/* Staj Sonu Akademik Değerlendirme Kartı */}
+                {(selected.status === 'Passed' || selected.status === 'Failed') && (
+                  <div
+                    className={`rounded-2xl border-2 p-4 text-sm shadow-xs ${
+                      selected.status === 'Passed'
+                        ? selected.academicResult === 'PartiallySuccessful'
+                          ? 'border-amber-400 bg-amber-50 text-amber-950'
+                          : 'border-emerald-400 bg-emerald-50 text-emerald-950'
+                        : 'border-rose-400 bg-rose-50 text-rose-950'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 font-extrabold">
+                        <CheckCircle2 className="h-5 w-5" />
+                        <span>Akademik Değerlendirme Sonucu</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full border px-3 py-0.5 text-xs font-extrabold ${
+                            academicResultColors[
+                              selected.academicResult && selected.academicResult !== 'None'
+                                ? selected.academicResult
+                                : selected.status === 'Passed'
+                                ? 'Successful'
+                                : 'Unsuccessful'
+                            ]
+                          }`}
+                        >
+                          {
+                            academicResultLabels[
+                              selected.academicResult && selected.academicResult !== 'None'
+                                ? selected.academicResult
+                                : selected.status === 'Passed'
+                                ? 'Successful'
+                                : 'Unsuccessful'
+                            ]
+                          }
+                        </span>
+                        <span className="rounded-full bg-white px-3 py-0.5 text-xs font-extrabold text-slate-800 border border-slate-300">
+                          Kabul Edilen: {selected.acceptedDaysCount ?? (selected.status === 'Passed' ? selected.workDays : 0)} / {selected.workDays} İş Günü
+                        </span>
+                      </div>
+                    </div>
+                    {selected.evaluationNote && (
+                      <p className="mt-2 text-xs font-medium">
+                        <b>Komisyon Değerlendirme Notu:</b> {selected.evaluationNote}
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Madde 15: Danışman Staj Defterini Beğenmedi / Revize İstedi Uyarısı */}
                 {selected.logbookRevisionRequested && (
                   <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-rose-400 bg-rose-50 p-4 text-sm text-rose-950">
@@ -1660,8 +1896,23 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                       <h3 className="mt-2 text-xl font-bold text-slate-900">{selected.companyName}</h3>
                       <p className="text-xs text-slate-500">
                         Departman: <b>{selected.department || 'Genel Birim'}</b> • Sorumlu Mühendis:{' '}
-                        <b>{selected.advisorName}</b> ({selected.advisorEmail})
+                        <b>{selected.advisorName}</b>{selected.advisorTitle ? ` (${selected.advisorTitle})` : ''} ({selected.advisorEmail})
                       </p>
+                      {(selected.subject || selected.advisorGraduatedDepartment) && (
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {selected.subject && (
+                            <span>
+                              Staj Konusu: <b className="text-slate-700">{selected.subject}</b>
+                            </span>
+                          )}
+                          {selected.subject && selected.advisorGraduatedDepartment && ' • '}
+                          {selected.advisorGraduatedDepartment && (
+                            <span>
+                              Mezuniyet: <b className="text-slate-700">{selected.advisorGraduatedDepartment}</b>
+                            </span>
+                          )}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -1685,7 +1936,8 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                       {selected.status !== 'Draft' &&
                         selected.status !== 'Passed' &&
                         selected.status !== 'Failed' &&
-                        selected.status !== 'Cancelled' && (
+                        selected.status !== 'Cancelled' &&
+                        selected.status !== 'Rejected' && (
                           <button
                             type="button"
                             onClick={openForm7Modal}

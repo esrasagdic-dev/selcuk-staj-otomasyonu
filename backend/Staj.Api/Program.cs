@@ -304,6 +304,7 @@ committee.MapGet("/internships", (InternshipStatus? status, Guid? termId, string
     svc.ListAsync(status, termId, search, archived ?? false, archiveYear, ct));
 committee.MapPost("/internships/{id:guid}/approve", (Guid id, CommitteeService svc, CancellationToken ct) => svc.ApproveAsync(id, ct));
 committee.MapPost("/internships/{id:guid}/revision", (Guid id, NoteRequest req, CommitteeService svc, CancellationToken ct) => svc.RequestRevisionAsync(id, req.Note, ct));
+committee.MapPost("/internships/{id:guid}/reject", (Guid id, NoteRequest req, CommitteeService svc, CancellationToken ct) => svc.RejectAsync(id, req.Note, ct));
 committee.MapPost("/internships/{id:guid}/cancel", (Guid id, NoteRequest req, CommitteeService svc, CancellationToken ct) => svc.CancelAsync(id, req.Note, ct));
 committee.MapPost("/internships/{id:guid}/reject-cancel", (Guid id, NoteRequest req, CommitteeService svc, CancellationToken ct) => svc.RejectCancelRequestAsync(id, req.Note, ct));
 committee.MapPost("/internships/{id:guid}/evaluate", (Guid id, EvaluateRequest req, CommitteeService svc, CancellationToken ct) => svc.EvaluateAsync(id, req, ct));
@@ -331,7 +332,8 @@ committee.MapPost("/lifecycle/run", async (DateOnly? simulatedToday, LifecycleSe
 // =========================================================================
 var advisor = api.MapGroup("/advisor").WithTags("Advisor").RequireAuthorization("Advisor");
 advisor.MapGet("/internships", (AdvisorService svc, CancellationToken ct) => svc.ListMyInternsAsync(ct));
-advisor.MapPost("/internships/{id:guid}/approve-logbook", (Guid id, AdvisorService svc, CancellationToken ct) => svc.ApproveLogbookAsync(id, ct));
+advisor.MapPost("/internships/{id:guid}/approve-logbook", (Guid id, HttpContext http, AdvisorService svc, CancellationToken ct) =>
+    svc.ApproveLogbookAsync(id, http.Connection.RemoteIpAddress?.ToString(), ct));
 advisor.MapPost("/internships/{id:guid}/request-logbook-revision", (Guid id, NoteRequest req, AdvisorService svc, CancellationToken ct) => svc.RequestLogbookRevisionAsync(id, req.Note, ct));
 
 // =========================================================================
