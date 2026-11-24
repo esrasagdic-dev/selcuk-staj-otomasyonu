@@ -32,8 +32,13 @@ public class AdvisorService
     /// </summary>
     public async Task<List<InternshipSummaryDto>> ListMyInternsAsync(CancellationToken ct = default)
     {
+        var me = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == _currentUser.UserId, ct);
+        var myEmail = me?.Email?.Trim().ToLowerInvariant();
+
         var list = await _internships.Query()
-            .Where(i => i.AdvisorId == _currentUser.UserId && i.Status != InternshipStatus.Cancelled)
+            .Where(i => (i.AdvisorId == _currentUser.UserId ||
+                         (!string.IsNullOrWhiteSpace(myEmail) && i.AdvisorEmail.ToLower() == myEmail)) &&
+                        i.Status != InternshipStatus.Cancelled)
             .OrderByDescending(i => i.StartDate)
             .ToListAsync(ct);
         return list.Select(i => i.ToSummary()).ToList();
@@ -45,8 +50,15 @@ public class AdvisorService
     public async Task<InternshipDetailDto> ApproveLogbookAsync(Guid id, string? ipAddress = null, CancellationToken ct = default)
     {
         var i = await _internships.LoadAsync(id, ct);
-        if (_currentUser.Role == UserRole.CompanyAdvisor && i.AdvisorId != _currentUser.UserId)
-            throw AppException.Forbidden();
+        if (_currentUser.Role == UserRole.CompanyAdvisor)
+        {
+            var me = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == _currentUser.UserId, ct);
+            var isOwner = i.AdvisorId == _currentUser.UserId ||
+                          (!string.IsNullOrWhiteSpace(me?.Email) && string.Equals(i.AdvisorEmail, me.Email, StringComparison.OrdinalIgnoreCase));
+            if (!isOwner) throw AppException.Forbidden("Yalnızca kendi sorumlu olduğunuz stajyerin defterini onaylayabilirsiniz.");
+        }
+        if (i.AdvisorLogbookApproved)
+            throw AppException.BadRequest("Onaylanmış staj defteri için revize (düzeltme) istenemez.");
         if (i.Status is not (InternshipStatus.ApprovedByCommittee or InternshipStatus.InsuranceStarted or InternshipStatus.InProgress or InternshipStatus.CompletedPendingReview))
             throw AppException.BadRequest("Defter onayı yalnızca aktif veya tamamlanmış staj sürecinde verilebilir.");
         var completedCount = i.LogbookEntries.Count(e => !e.IsDraft);
@@ -60,6 +72,10 @@ public class AdvisorService
         i.LogbookLockReason = $"Sorumlu mühendis ({i.AdvisorName}) tarafından {DateTime.Now:dd.MM.yyyy HH:mm} tarihinde onaylanarak kilitlendi.";
         i.LogbookRevisionRequested = false;
         i.LogbookRevisionNote = null;
+        if (i.Status is InternshipStatus.ApprovedByCommittee or InternshipStatus.InsuranceStarted or InternshipStatus.InProgress)
+        {
+            i.Status = InternshipStatus.CompletedPendingReview;
+        }
         i.AdvisorEmailStatus = $"Sorumlu mühendis ({i.AdvisorName}) staj defterini inceledi ve onayladı ({DateTime.Now:dd.MM.yyyy HH:mm}).";
         i.UpdatedAt = DateTime.UtcNow;
         _notify.ToUser(i.StudentId, "Staj Defteriniz Onaylandı", $"Sorumlu mühendis ({i.AdvisorName}) sanal staj defterinizi inceledi ve onayladı.", NotificationType.Success, i.Id);
@@ -77,8 +93,15 @@ public class AdvisorService
             throw AppException.BadRequest("Lütfen staj defteri için revize / düzeltme gerekçesini yazınız.");
 
         var i = await _internships.LoadAsync(id, ct);
-        if (_currentUser.Role == UserRole.CompanyAdvisor && i.AdvisorId != _currentUser.UserId)
-            throw AppException.Forbidden();
+        if (_currentUser.Role == UserRole.CompanyAdvisor)
+        {
+            var me = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == _currentUser.UserId, ct);
+            var isOwner = i.AdvisorId == _currentUser.UserId ||
+                          (!string.IsNullOrWhiteSpace(me?.Email) && string.Equals(i.AdvisorEmail, me.Email, StringComparison.OrdinalIgnoreCase));
+            if (!isOwner) throw AppException.Forbidden("Yalnızca kendi sorumlu olduğunuz stajyerin defterine revize isteyebilirsiniz.");
+        }
+        if (i.AdvisorLogbookApproved)
+            throw AppException.BadRequest("Onaylanmış staj defteri için revize (düzeltme) istenemez.");
 
         i.AdvisorLogbookApproved = false;
         i.AdvisorApprovedAt = null;

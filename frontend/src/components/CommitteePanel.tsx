@@ -11,7 +11,6 @@ import {
   Eye,
   FileX2,
   Filter,
-  Lock,
   Mail,
   Megaphone,
   Play,
@@ -19,7 +18,6 @@ import {
   RotateCcw,
   Send,
   Trash2,
-  Unlock,
   Users,
   XCircle,
 } from 'lucide-react';
@@ -55,7 +53,6 @@ import {
   type UserRole,
 } from '../api';
 import { DocumentPreviewModal, type PreviewSource } from './DocumentPreviewModal';
-import { AuthImage } from './AuthImage';
 import { EmailHistoryModal } from './EmailHistoryModal';
 
 interface Props {
@@ -93,7 +90,6 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
   // Yıllık Arşiv Sekmesi (Ayrı Panel) State'leri
   const [archiveList, setArchiveList] = useState<InternshipSummaryDto[]>([]);
   const [archiveSelected, setArchiveSelected] = useState<InternshipDetailDto | null>(null);
-  const [archiveLogbook, setArchiveLogbook] = useState<LogbookEntryDto[]>([]);
   const [archiveYear, setArchiveYear] = useState('');
   const [archiveYears, setArchiveYears] = useState<string[]>([]);
   const [archiveTypeFilter, setArchiveTypeFilter] = useState<'' | 'Staj1' | 'Staj2'>('');
@@ -232,7 +228,6 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
         await selectArchiveInternship(listRes.data[0].id);
       } else {
         setArchiveSelected(null);
-        setArchiveLogbook([]);
       }
     } catch (err) {
       setMsg({ type: 'err', text: getErrorMessage(err) });
@@ -241,12 +236,8 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
 
   const selectArchiveInternship = async (id: string) => {
     try {
-      const [detailRes, logRes] = await Promise.all([
-        api.get<InternshipDetailDto>(`/internships/${id}`),
-        api.get<LogbookEntryDto[]>(`/internships/${id}/logbook`),
-      ]);
+      const detailRes = await api.get<InternshipDetailDto>(`/internships/${id}`);
       setArchiveSelected(detailRes.data);
-      setArchiveLogbook(logRes.data);
     } catch {
       setArchiveSelected(null);
     }
@@ -693,28 +684,6 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
     }
   };
 
-  const handleToggleLogbookLock = async () => {
-    if (!selected) return;
-    const willLock = !selected.isLogbookLocked;
-    setMsg(null);
-    try {
-      await api.post(`/committee/internships/${selected.id}/logbook-lock`, {
-        locked: willLock,
-        reason: willLock ? actionNote.trim() || 'Komisyon tarafından kilitlendi.' : null,
-      });
-      if (willLock && actionNote.trim()) setActionNote('');
-      setMsg({
-        type: 'ok',
-        text: willLock
-          ? 'Sanal staj defteri kilitlendi.'
-          : 'Sanal staj defteri kilidi açıldı.',
-      });
-      await loadApplications();
-    } catch (err) {
-      setMsg({ type: 'err', text: getErrorMessage(err) });
-    }
-  };
-
   const handleRequestLogbookRevision = async () => {
     if (!selected) return;
     if (!actionNote.trim()) {
@@ -991,6 +960,28 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
 
   return (
     <div className="space-y-6">
+      {/* Aktif Bölüm Komisyonu Başlığı ve İzolasyon Rozeti */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 px-5 py-4 text-white shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 text-amber-300 backdrop-blur-xs">
+            <Building2 className="h-6 w-6" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-extrabold tracking-tight sm:text-lg">
+                {user.department || 'Bilgisayar Mühendisliği'} — Staj Komisyonu Yönetim Paneli
+              </h2>
+              <span className="rounded-full bg-amber-400/20 border border-amber-300/40 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-200">
+                🔒 Bölüm İzolasyonu Aktif
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-blue-100">
+              Yetkili: <b>{user.fullName}</b> ({roleLabels[user.role]}) • Yalnızca <b>{user.department || 'Bilgisayar Mühendisliği'}</b> bölümüne kayıtlı öğrencilerin başvuruları, izinleri ve arşivleri listelenmektedir.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Özet İstatistik Kartları (Tıklanabilir & Akordeon Filtre Yapısı) */}
       {stats && (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
@@ -1365,19 +1356,19 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div>
+                      <div className="min-w-0 flex-1">
                         <span className="font-bold text-slate-900">{item.studentName}</span>
                         <span className="ml-1.5 text-xs text-slate-500">({item.studentNo})</span>
-                        <p className="text-xs font-semibold text-indigo-700">
+                        <p className="text-xs font-semibold text-indigo-700 truncate">
                           {item.type === 'Staj1' ? 'Staj 1' : 'Staj 2'} — {item.companyName}
                         </p>
                         {item.subject && (
                           <p className="text-[11px] text-slate-600 truncate">Konu: {item.subject}</p>
                         )}
                       </div>
-                      <div className="flex flex-col items-end gap-1">
+                      <div className="shrink-0 flex flex-col items-end gap-1">
                         <span
-                          className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
+                          className={`whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
                             statusColors[item.status]
                           }`}
                         >
@@ -1385,7 +1376,7 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                         </span>
                         {item.academicResult && item.academicResult !== 'None' && (
                           <span
-                            className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                            className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold ${
                               academicResultColors[item.academicResult]
                             }`}
                           >
@@ -1958,81 +1949,6 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                     </p>
                   )}
                 </div>
-
-                {/* Sanal Defter Özeti + Defter Kilidi */}
-                <div>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h4 className="text-xs font-bold uppercase text-slate-500">
-                        Sanal Staj Defteri Sayfaları ({logbook.filter((e) => !e.isDraft).length} Tamamlanan / {selected.workDays} Gün)
-                      </h4>
-                      {selected.isLogbookLocked && (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-50 px-2.5 py-0.5 text-[11px] font-bold text-rose-800">
-                          <Lock className="h-3 w-3" />
-                          Defter Kilitli{selected.logbookLockReason ? ` — ${selected.logbookLockReason}` : ''}
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleToggleLogbookLock}
-                      className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1 text-xs font-bold transition ${
-                        selected.isLogbookLocked
-                          ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                          : 'border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100'
-                      }`}
-                    >
-                      {selected.isLogbookLocked ? (
-                        <>
-                          <Unlock className="h-3.5 w-3.5" />
-                          Defter Kilidini Aç
-                        </>
-                      ) : (
-                        <>
-                          <Lock className="h-3.5 w-3.5" />
-                          Defteri Kilitle
-                        </>
-                      )}
-                    </button>
-                  </div>
-                  {logbook.length === 0 ? (
-                    <p className="mt-2 text-xs text-slate-500">Henüz defter sayfası girilmemiş.</p>
-                  ) : (
-                    <div className="mt-2 max-h-80 space-y-2 overflow-y-auto pr-1">
-                      {logbook.map((e) => (
-                        <div key={e.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs space-y-2">
-                          <div className="flex items-center justify-between gap-2 font-bold text-slate-900">
-                            <div className="flex items-center gap-2">
-                              <span>
-                                {e.dayNumber}. İş Günü — {e.title}
-                              </span>
-                              {e.isDraft && (
-                                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-900 border border-amber-300">
-                                  TASLAK
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-slate-500">{formatDate(e.date)}</span>
-                          </div>
-                          <p className="text-slate-700">{e.content}</p>
-                          {e.hasImage && (
-                            <div className="rounded-lg border border-slate-200 bg-white p-2">
-                              <AuthImage
-                                src={`/internships/${selected.id}/logbook/${e.id}/image`}
-                                alt={e.imageCaption || `${e.dayNumber}. Gün Çalışma Görseli`}
-                                cacheKey={e.updatedAt}
-                                className="max-h-48 w-auto rounded object-contain"
-                              />
-                              {e.imageCaption && (
-                                <p className="mt-1 text-[11px] italic text-slate-600">{e.imageCaption}</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </div>
             )}
           </div>
@@ -2157,20 +2073,20 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="rounded bg-indigo-100 px-2 py-0.5 text-[10px] font-extrabold text-indigo-900">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="shrink-0 rounded bg-indigo-100 px-2 py-0.5 text-[10px] font-extrabold text-indigo-900">
                               {item.archiveYear || item.startDate.slice(0, 4)} YILI
                             </span>
                             <span className="font-bold text-slate-900">{item.studentName}</span>
                             <span className="text-xs text-slate-500">({item.studentNo})</span>
                           </div>
-                          <p className="mt-1 text-xs font-semibold text-indigo-700">
+                          <p className="mt-1 text-xs font-semibold text-indigo-700 truncate">
                             {item.type === 'Staj1' ? 'Staj 1' : 'Staj 2'} — {item.companyName}
                           </p>
                         </div>
                         <span
-                          className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
+                          className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
                             statusColors[item.status]
                           }`}
                         >
@@ -2303,49 +2219,6 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                             >
                               <Download className="h-3.5 w-3.5" />
                             </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <h4 className="text-xs font-bold uppercase text-slate-500">
-                      Sanal Staj Defteri Sayfaları ({archiveLogbook.length} / {archiveSelected.workDays} Gün)
-                    </h4>
-                    {archiveLogbook.length === 0 ? (
-                      <p className="mt-2 text-xs text-slate-500">Defter sayfası girilmemiş.</p>
-                    ) : (
-                      <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">
-                        {archiveLogbook.map((e) => (
-                          <div key={e.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs space-y-2">
-                            <div className="flex items-center justify-between gap-2 font-bold text-slate-900">
-                              <div className="flex items-center gap-2">
-                                <span>
-                                  {e.dayNumber}. İş Günü — {e.title}
-                                </span>
-                                {e.isDraft && (
-                                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-900 border border-amber-300">
-                                    TASLAK
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-slate-500">{formatDate(e.date)}</span>
-                            </div>
-                            <p className="text-slate-700">{e.content}</p>
-                            {e.hasImage && (
-                              <div className="rounded-lg border border-slate-200 bg-white p-2">
-                                <AuthImage
-                                  src={`/internships/${archiveSelected.id}/logbook/${e.id}/image`}
-                                  alt={e.imageCaption || `${e.dayNumber}. Gün Çalışma Görseli`}
-                                  cacheKey={e.updatedAt}
-                                  className="max-h-48 w-auto rounded object-contain"
-                                />
-                                {e.imageCaption && (
-                                  <p className="mt-1 text-[11px] italic text-slate-600">{e.imageCaption}</p>
-                                )}
-                              </div>
-                            )}
                           </div>
                         ))}
                       </div>

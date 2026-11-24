@@ -182,6 +182,10 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
     terms.find((t) => t.internshipType === selectedInternshipType) ??
     null;
   const isApprovedInternship = selected ? APPROVED_STATUSES.includes(selected.status) : false;
+  const isInsuranceStartedInternship = selected
+    ? ['InsuranceStarted', 'InProgress', 'CompletedPendingReview', 'Passed'].includes(selected.status) ||
+      selected.kptoStatus === 'InsuranceActive'
+    : false;
   const verifiedStudentNo =
     user.studentNo || (user.email.includes('@') ? user.email.split('@')[0] : '');
 
@@ -795,9 +799,17 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
   const draftLogbookCount = logbook.filter((e) => e.isDraft).length;
   const isLogbookComplete = selected ? completedLogbookCount >= selected.workDays : false;
 
+  const isInternshipDaysCompleted = selected
+    ? selected.status === 'CompletedPendingReview' ||
+      selected.status === 'Passed' ||
+      (selected.currentDay ?? 0) >= selected.workDays ||
+      new Date().setHours(0, 0, 0, 0) > new Date(selected.endDate).getTime()
+    : false;
+
   // Madde 14: Staj bitimine 1 hafta kala uyarısı kontrolü
   const isEndingWithinOneWeek = (() => {
-    if (!selected) return false;
+    if (!selected || isInternshipDaysCompleted) return false;
+    if (selected.logbookSubmittedToAdvisorAt || selected.advisorLogbookApproved) return false;
     if (selected.endingSoonNotified) return true;
     if (selected.status !== 'InProgress' && selected.status !== 'InsuranceStarted') return false;
     const endMs = new Date(selected.endDate).getTime();
@@ -807,7 +819,7 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
       selected.currentDay && selected.currentDay > 0
         ? selected.workDays - selected.currentDay
         : 99;
-    return (diffDays >= 0 && diffDays <= 7) || remainingWorkDays <= 5;
+    return (diffDays >= 0 && diffDays <= 7) || (remainingWorkDays > 0 && remainingWorkDays <= 5);
   })();
 
   // Madde 9: Öğrenci Paneli Akış Takibi (Adımlar ilerledikçe ilerleyen Stepper)
@@ -845,8 +857,10 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
       step: 4,
       title: '4. Aktif Staj & Defter',
       desc:
-        selected && selected.currentDay && selected.currentDay > 0
-          ? `${selected.currentDay}. Gün / ${selected.workDays} İş Günü`
+        selected && isInternshipDaysCompleted
+          ? `Tamamlandı (${selected.workDays}/${selected.workDays} İş Günü)`
+          : selected && selected.currentDay && selected.currentDay > 0
+          ? `${Math.min(selected.currentDay, selected.workDays)}. Gün / ${selected.workDays} İş Günü`
           : 'Günlük Rapor Yazımı',
     },
     {
@@ -1037,10 +1051,10 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
           {/* 4. İzin / Rapor Talebi */}
           <button
             onClick={() => {
-              if (!isApprovedInternship) {
+              if (!isInsuranceStartedInternship) {
                 setMsg({
                   type: 'err',
-                  text: 'İzin / Rapor Talebi paneli, staj başvurunuz onaylandığında açılacaktır.',
+                  text: 'İzin / Rapor Talebi paneli, hem Staj Komisyonu hem de KPTO sigorta onayları tamamlanıp SGK sigortanız başlatıldığında açılacaktır.',
                 });
                 return;
               }
@@ -1050,12 +1064,12 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
               mainTab === 'leaves'
                 ? 'bg-blue-700 text-white shadow-xs'
-                : isApprovedInternship
+                : isInsuranceStartedInternship
                 ? 'bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100'
                 : 'bg-slate-100 text-slate-400 cursor-not-allowed'
             }`}
           >
-            {isApprovedInternship ? (
+            {isInsuranceStartedInternship ? (
               <Calendar className="h-4 w-4" />
             ) : (
               <Lock className="h-3.5 w-3.5" />
@@ -1929,8 +1943,10 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                       </div>
                       <div>
                         <h4 className="font-bold text-emerald-950">
-                          {selected.currentDay && selected.currentDay > 0
-                            ? `🚀 Aktif Stajınız Devam Ediyor: ${selected.currentDay}. İş Günündesiniz!`
+                          {isInternshipDaysCompleted
+                            ? `🎉 Staj Süreniz Tamamlandı (${selected.workDays} / ${selected.workDays} İş Günü Bitti)`
+                            : selected.currentDay && selected.currentDay > 0
+                            ? `🚀 Aktif Stajınız Devam Ediyor: ${Math.min(selected.currentDay, selected.workDays)}. İş Günündesiniz!`
                             : selected.kptoStatus === 'InsuranceActive'
                             ? '✔ Sigortanız başlatıldı, başlangıç tarihi geldiği anda 1. Gün sayacınız başlayacaktır!'
                             : '✔ Başvurunuz Komisyon tarafından onaylandı (KPTO Sigorta Girişi Bekleniyor)'}
@@ -1966,19 +1982,31 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                       <span className="block text-[11px] font-extrabold text-slate-500 uppercase">
                         Aktif Staj Gün Sayacı
                       </span>
-                      <span className="mt-0.5 block text-lg font-extrabold text-indigo-700">
-                        {selected.currentDay && selected.currentDay > 0
-                          ? `${selected.currentDay}. Gün / ${selected.workDays} İş Günü`
+                      <span
+                        className={`mt-0.5 block text-lg font-extrabold ${
+                          isInternshipDaysCompleted ? 'text-emerald-700' : 'text-indigo-700'
+                        }`}
+                      >
+                        {isInternshipDaysCompleted
+                          ? `✔ Staj Süresi Bitti (${selected.workDays}/${selected.workDays} Gün)`
+                          : selected.currentDay && selected.currentDay > 0
+                          ? `${Math.min(selected.currentDay, selected.workDays)}. Gün / ${selected.workDays} İş Günü`
                           : `Başlangıç: ${formatDate(selected.startDate)} (1. Gün)`}
                       </span>
                       <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
                         <div
-                          className="h-full rounded-full bg-indigo-600 transition-all"
+                          className={`h-full rounded-full transition-all ${
+                            isInternshipDaysCompleted ? 'bg-emerald-600' : 'bg-indigo-600'
+                          }`}
                           style={{
-                            width: `${Math.min(
-                              100,
-                              Math.round(((selected.currentDay ?? 0) / selected.workDays) * 100)
-                            )}%`,
+                            width: `${
+                              isInternshipDaysCompleted
+                                ? 100
+                                : Math.min(
+                                    100,
+                                    Math.round(((selected.currentDay ?? 0) / selected.workDays) * 100)
+                                  )
+                            }%`,
                           }}
                         />
                       </div>

@@ -184,11 +184,20 @@ public class AuthService
     }
 
     /// <summary>
-    /// Tüm kullanıcıları listeler (Bölüm Başkanı / Admin).
+    /// Tüm kullanıcıları listeler (Bölüm Başkanı / Komisyon kendi bölümünün öğrenci ve komisyon üyelerini görür).
     /// </summary>
     public async Task<List<UserDto>> ListUsersAsync(UserRole? role, CancellationToken ct = default)
     {
+        var current = await CurrentAsync(ct);
+        var commDept = string.IsNullOrWhiteSpace(current.Department) ? "Bilgisayar Mühendisliği" : current.Department.Trim();
         var q = _db.Users.AsQueryable();
+        if (current.Role is UserRole.CommitteeMember or UserRole.DepartmentHead)
+        {
+            q = q.Where(u =>
+                (u.Department ?? "Bilgisayar Mühendisliği") == commDept ||
+                u.Role == UserRole.KptoOfficer ||
+                u.Role == UserRole.CompanyAdvisor);
+        }
         if (role.HasValue) q = q.Where(u => u.Role == role.Value);
         var list = await q.OrderBy(u => u.Role).ThenBy(u => u.FullName).ToListAsync(ct);
         return list.Select(u => u.ToDto()).ToList();
@@ -199,6 +208,8 @@ public class AuthService
     /// </summary>
     public async Task<UserDto> CreateStaffAsync(CreateStaffRequest req, CancellationToken ct = default)
     {
+        var current = await CurrentAsync(ct);
+        var commDept = string.IsNullOrWhiteSpace(current.Department) ? "Bilgisayar Mühendisliği" : current.Department.Trim();
         if (req.Role is UserRole.Student or UserRole.CompanyAdvisor)
             throw AppException.BadRequest("Öğrenci ve şirket yetkilisi hesapları bu ekrandan oluşturulamaz.");
         var email = req.Email.Trim().ToLowerInvariant();
@@ -207,6 +218,7 @@ public class AuthService
         var user = new User
         {
             Email = email, FullName = req.FullName.Trim(), Role = req.Role, Phone = req.Phone,
+            Department = req.Role == UserRole.KptoOfficer ? "Kariyer Planlama ve Sigorta Birimi" : commDept,
             PasswordHash = _hasher.Hash(req.Password), MustChangePassword = true, HasAcceptedGuide = true
         };
         _db.Users.Add(user);

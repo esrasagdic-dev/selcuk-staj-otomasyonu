@@ -73,21 +73,41 @@ public class InternshipService
             .Include(x => x.Documents).ThenInclude(d => d.Versions)
             .Include(x => x.LeaveRequests).Include(x => x.LogbookEntries)
             .FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw AppException.NotFound("Staj kaydı");
-        EnsureCanView(i);
+        await EnsureCanViewAsync(i, ct);
         return i;
     }
 
     /// <summary>
     /// Oturumdaki kullanıcının stajı görüntüleme yetkisi olup olmadığını kontrol eder.
+    /// Komisyon üyeleri ve Bölüm Başkanları yalnızca kendi bölümlerinin öğrencilerini görüntüleyebilir.
     /// </summary>
-    public void EnsureCanView(Internship i)
+    public async Task EnsureCanViewAsync(Internship i, CancellationToken ct = default)
     {
+        if (_currentUser.Role is UserRole.CommitteeMember or UserRole.DepartmentHead)
+        {
+            var commUser = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == _currentUser.UserId, ct);
+            var commDept = string.IsNullOrWhiteSpace(commUser?.Department) ? "Bilgisayar Mühendisliği" : commUser.Department.Trim();
+            var studentUser = i.Student ?? await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == i.StudentId, ct);
+            var studentDept = string.IsNullOrWhiteSpace(studentUser?.Department) ? "Bilgisayar Mühendisliği" : studentUser.Department.Trim();
+            if (!string.Equals(commDept, studentDept, StringComparison.OrdinalIgnoreCase))
+                throw AppException.Forbidden($"Yalnızca kendi bölümünüzün ({commDept}) öğrencilerine ait staj kayıtlarını görüntüleyebilirsiniz.");
+            return;
+        }
+
+        if (_currentUser.Role == UserRole.CompanyAdvisor)
+        {
+            var advUser = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == _currentUser.UserId, ct);
+            var isAdvOwner = i.AdvisorId == _currentUser.UserId ||
+                             (!string.IsNullOrWhiteSpace(advUser?.Email) && string.Equals(i.AdvisorEmail, advUser.Email, StringComparison.OrdinalIgnoreCase));
+            if (!isAdvOwner) throw AppException.Forbidden("Yalnızca kendi sorumlu olduğunuz stajyerin kaydını görüntüleyebilirsiniz.");
+            return;
+        }
+
         var ok = _currentUser.Role switch
         {
             UserRole.Student => i.StudentId == _currentUser.UserId,
-            UserRole.CompanyAdvisor => i.AdvisorId == _currentUser.UserId,
             UserRole.KptoOfficer => i.KptoStatus != null,
-            UserRole.CommitteeMember or UserRole.DepartmentHead or UserRole.Admin => true,
+            UserRole.Admin => true,
             _ => false
         };
         if (!ok) throw AppException.Forbidden();
@@ -130,7 +150,23 @@ public class InternshipService
 
         int? day = null;
         if (i.Status is InternshipStatus.ApprovedByCommittee or InternshipStatus.InsuranceStarted or InternshipStatus.InProgress or InternshipStatus.CompletedPendingReview or InternshipStatus.Passed)
-            day = await _calc.CurrentDayAsync(i.StartDate, i.EndDate, Today, i.WorksOnSaturday, ct);
+        {
+            var rawDay = await _calc.CurrentDayAsync(i.StartDate, i.EndDate, Today, i.WorksOnSaturday, ct);
+            if (rawDay > 0)
+            {
+                var elapsedLeaveDays = i.LeaveRequests
+                    .Where(l => l.Status == LeaveRequestStatus.Approved && l.StartDate <= Today)
+                    .Sum(l => l.Days);
+                var netDay = (Today > i.EndDate || i.Status is InternshipStatus.CompletedPendingReview or InternshipStatus.Passed)
+                    ? i.WorkDays
+                    : Math.Max(1, rawDay - elapsedLeaveDays);
+                day = Math.Min(netDay, i.WorkDays);
+            }
+            else
+            {
+                day = 0;
+            }
+        }
         var dto = i.ToDetail(day);
         if (_currentUser.Role == UserRole.Student && !string.IsNullOrWhiteSpace(dto.AdvisorEmailStatus))
         {
@@ -467,8 +503,8 @@ public class InternshipService
     public async Task<StoredFileDto> DownloadAsync(Guid documentId, CancellationToken ct = default)
     {
         var doc = await _db.Documents.FirstOrDefaultAsync(d => d.Id == documentId, ct) ?? throw AppException.NotFound("Belge");
-        var i = await _db.Internships.FirstAsync(x => x.Id == doc.InternshipId, ct);
-        EnsureCanView(i);
+        var i = await _db.Internships.Include(x => x.Student).FirstAsync(x => x.Id == doc.InternshipId, ct);
+        await EnsureCanViewAsync(i, ct);
         return new StoredFileDto(_files.OpenRead(doc.StoredFileName), doc.ContentType, doc.OriginalFileName);
     }
 
@@ -480,8 +516,8 @@ public class InternshipService
         var ver = await _db.DocumentVersions
             .Include(v => v.Document)
             .FirstOrDefaultAsync(v => v.Id == versionId, ct) ?? throw AppException.NotFound("Belge sürümü");
-        var i = await _db.Internships.FirstAsync(x => x.Id == ver.Document.InternshipId, ct);
-        EnsureCanView(i);
+        var i = await _db.Internships.Include(x => x.Student).FirstAsync(x => x.Id == ver.Document.InternshipId, ct);
+        await EnsureCanViewAsync(i, ct);
         return new StoredFileDto(_files.OpenRead(ver.StoredFileName), ver.ContentType, ver.OriginalFileName);
     }
 
@@ -894,11 +930,44 @@ public class InternshipService
             throw AppException.BadRequest($"Eksik staj defteri sorumlu mühendise gönderilemez! Toplam {i.WorkDays} iş gününün tamamı 'Tamamlandı' olarak kaydedilmelidir (Tamamlanan: {completedCount} / {i.WorkDays} gün){draftMsg}.");
         }
 
+        var advisor = await _db.Users.FirstOrDefaultAsync(u => u.Email == i.AdvisorEmail, ct);
+        string tempPassword;
+        if (i.AdvisorEmail == "danisman@aselsankonya.com.tr")
+        {
+            tempPassword = "123456";
+        }
+        else
+        {
+            const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+            tempPassword = new string(Enumerable.Range(0, 8)
+                .Select(_ => chars[System.Security.Cryptography.RandomNumberGenerator.GetInt32(chars.Length)]).ToArray());
+        }
+
+        if (advisor is null)
+        {
+            advisor = new User
+            {
+                Email = i.AdvisorEmail,
+                FullName = i.AdvisorName,
+                Role = UserRole.CompanyAdvisor,
+                CompanyId = i.CompanyId,
+                PasswordHash = _hasher.Hash(tempPassword),
+                MustChangePassword = false,
+                HasAcceptedGuide = true
+            };
+            _db.Users.Add(advisor);
+        }
+        else if (advisor.Role == UserRole.CompanyAdvisor && i.AdvisorEmail != "danisman@aselsankonya.com.tr")
+        {
+            advisor.PasswordHash = _hasher.Hash(tempPassword);
+        }
+
+        i.AdvisorId = advisor.Id;
         i.LogbookSubmittedToAdvisorAt = DateTime.UtcNow;
         i.LogbookRevisionRequested = false;
         i.LogbookRevisionNote = null;
         i.AdvisorEmailSentAt = DateTime.UtcNow;
-        i.AdvisorEmailStatus = $"Staj defteri tamamlandı ({i.LogbookEntries.Count}/{i.WorkDays} gün) ve sorumlu mühendise ({i.AdvisorEmail}) inceleme e-postası gönderildi ({DateTime.Now:dd.MM.yyyy HH:mm}).";
+        i.AdvisorEmailStatus = $"Staj defteri tamamlandı ({i.LogbookEntries.Count}/{i.WorkDays} gün) ve geçici şifre ({tempPassword}) ile sorumlu mühendise ({i.AdvisorEmail}) inceleme e-postası gönderildi ({DateTime.Now:dd.MM.yyyy HH:mm}).";
         i.UpdatedAt = DateTime.UtcNow;
 
         if (i.AdvisorId.HasValue)
@@ -912,9 +981,10 @@ public class InternshipService
         var html = $"""
             <p>Sayın <b>{i.AdvisorName}</b>,</p>
             <p>Kurumunuzda ({i.Company.Name}) staj yapan <b>{i.Student.FullName}</b> ({i.Student.StudentNo}) isimli öğrenci, <b>{i.WorkDays} iş günlük</b> sanal staj defterini eksiksiz doldurarak inceleme ve onayınıza göndermiştir.</p>
-            <p>Şirket Yetkilisi Paneli'ne giriş yaparak öğrencinin staj defterini inceleyebilir, onaylayabilir veya düzeltme (revize) talep edebilirsiniz:</p>
+            <p>Şirket Yetkilisi Paneli'ne aşağıdaki giriş bilgilerinizle giriş yaparak öğrencinin staj defterini inceleyebilir, onaylayabilir veya düzeltme (revize) talep edebilirsiniz:</p>
             <p>Giriş Adresi: <a href="{loginUrl}">{loginUrl}</a><br/>
-            Yetkili E-Posta: <b>{i.AdvisorEmail}</b></p>
+            Yetkili E-Posta: <b>{i.AdvisorEmail}</b><br/>
+            Giriş Şifreniz: <b>{tempPassword}</b></p>
             <p>Saygılarımızla,<br/>T.C. Selçuk Üniversitesi Teknoloji Fakültesi Staj Komisyonu</p>
             """;
         await _notify.TryEmailAsync(i.AdvisorEmail, $"Staj Defteri Onayınıza Sunuldu - {i.Student.FullName}", html, ct, i.Id);
@@ -991,8 +1061,8 @@ public class InternshipService
     public async Task<LeaveRequestDto> CreateLeaveAsync(Guid id, LeaveCreateRequest req, CancellationToken ct = default)
     {
         var i = await LoadOwnAsync(id, ct);
-        if (i.Status is not (InternshipStatus.ApprovedByCommittee or InternshipStatus.InsuranceStarted or InternshipStatus.InProgress))
-            throw AppException.BadRequest("İzin talebi yalnızca onaylanmış veya devam eden staj için oluşturulabilir.");
+        if (i.Status is not (InternshipStatus.InsuranceStarted or InternshipStatus.InProgress) && i.KptoStatus != KptoInsuranceStatus.InsuranceActive)
+            throw AppException.BadRequest("İzin ve süre uzatma talebi yalnızca Staj Komisyonu ve KPTO sigorta onayları tamamlanıp SGK sigortası başlatıldıktan sonra oluşturulabilir.");
         if (req.Days is < 1 or > 15) throw AppException.BadRequest("İzin gün sayısı 1-15 arasında olmalıdır.");
         if (req.StartDate < i.StartDate || req.StartDate > i.EndDate) throw AppException.BadRequest("İzin başlangıcı staj tarihleri içinde olmalıdır.");
         if (string.IsNullOrWhiteSpace(req.Reason)) throw AppException.BadRequest("Gerekçe zorunludur.");

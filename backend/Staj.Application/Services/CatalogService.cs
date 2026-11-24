@@ -229,16 +229,27 @@ public class CatalogService
 
     /// <summary>
     /// Firma arşivi ve istatistikleri (Hangi firmada kaç öğrenci staj yaptı?).
+    /// Komisyon üyeleri ve Bölüm Başkanları yalnızca kendi bölüm öğrencilerinin staj yaptığı firmaların istatistiklerini görür.
     /// </summary>
     public async Task<List<CompanyStatDto>> GetCompanyStatsAsync(CancellationToken ct = default)
     {
+        string? commDept = null;
+        if (_currentUser.Role is UserRole.CommitteeMember or UserRole.DepartmentHead)
+        {
+            var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == _currentUser.UserId, ct);
+            commDept = string.IsNullOrWhiteSpace(user?.Department) ? "Bilgisayar Mühendisliği" : user.Department.Trim();
+        }
+
         var active = new[] { InternshipStatus.ApprovedByCommittee, InternshipStatus.InsuranceStarted, InternshipStatus.InProgress, InternshipStatus.CompletedPendingReview };
         var list = await _db.Companies
             .Select(c => new CompanyStatDto(
                 c.Id, c.Name, c.City, c.Sector, c.IsVerified,
-                c.Internships.Count(i => i.Status != InternshipStatus.Draft && i.Status != InternshipStatus.Cancelled && i.Status != InternshipStatus.Rejected),
-                c.Internships.Count(i => i.Status == InternshipStatus.Passed),
-                c.Internships.Count(i => active.Contains(i.Status))))
+                c.Internships.Count(i => (commDept == null || (i.Student.Department ?? "Bilgisayar Mühendisliği") == commDept) &&
+                                         i.Status != InternshipStatus.Draft && i.Status != InternshipStatus.Cancelled && i.Status != InternshipStatus.Rejected),
+                c.Internships.Count(i => (commDept == null || (i.Student.Department ?? "Bilgisayar Mühendisliği") == commDept) &&
+                                         i.Status == InternshipStatus.Passed),
+                c.Internships.Count(i => (commDept == null || (i.Student.Department ?? "Bilgisayar Mühendisliği") == commDept) &&
+                                         active.Contains(i.Status))))
             .ToListAsync(ct);
         return list.OrderByDescending(s => s.TotalInternships).ThenBy(s => s.Name).ToList();
     }

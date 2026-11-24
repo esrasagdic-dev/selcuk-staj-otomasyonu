@@ -25,36 +25,62 @@ import { KptoPanel } from './components/KptoPanel';
 import { QrVerifyModal } from './components/QrVerifyModal';
 import { StudentPanel } from './components/StudentPanel';
 
-const STUDENT_DEMO_ACCOUNT = {
-  label: 'Öğrenci Paneli (Ahmet Özkan — 233311056)',
-  email: '233311056@ogr.selcuk.edu.tr',
-  badge: 'Öğrenci',
-  color: 'border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100',
-};
+const STUDENT_DEMO_ACCOUNTS = [
+  {
+    label: 'Bilgisayar Müh. Öğrencisi (Ahmet Özkan — 233311056)',
+    email: '233311056@ogr.selcuk.edu.tr',
+    badge: 'Bilgisayar Müh.',
+    color: 'border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100',
+  },
+  {
+    label: 'Makine Müh. Öğrencisi (Seda Nur Karaca — 223322015)',
+    email: '223322015@ogr.selcuk.edu.tr',
+    badge: 'Makine Müh.',
+    color: 'border-orange-300 bg-orange-50 text-orange-900 hover:bg-orange-100',
+  },
+  {
+    label: 'Elektrik-Elektronik Müh. Öğrencisi (Ceren Yıldız — 223333019)',
+    email: '223333019@ogr.selcuk.edu.tr',
+    badge: 'Elektrik-Elektronik Müh.',
+    color: 'border-cyan-300 bg-cyan-50 text-cyan-900 hover:bg-cyan-100',
+  },
+];
 
 const ADMIN_DEMO_ACCOUNTS = [
   {
-    label: '1. Komisyon Paneli (Doç. Dr. Ayşe Kaya)',
+    label: '1. Bilgisayar Müh. Komisyonu (Doç. Dr. Ayşe Kaya)',
     email: 'komisyon@selcuk.edu.tr',
-    badge: 'Komisyon',
+    badge: 'Bilgisayar Komisyon',
     color: 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100',
   },
   {
-    label: '2. Bölüm Başkanı (Prof. Dr. Mehmet Yılmaz)',
+    label: '2. Makine Müh. Komisyonu (Doç. Dr. Hasan Çetin)',
+    email: 'komisyon.makine@selcuk.edu.tr',
+    badge: 'Makine Komisyon',
+    color: 'border-orange-300 bg-orange-50 text-orange-900 hover:bg-orange-100',
+  },
+  {
+    label: '3. Elektrik-Elektronik Müh. Komisyonu (Doç. Dr. Murat Yıldız)',
+    email: 'komisyon.ee@selcuk.edu.tr',
+    badge: 'Elektrik-Elektronik Komisyon',
+    color: 'border-cyan-300 bg-cyan-50 text-cyan-900 hover:bg-cyan-100',
+  },
+  {
+    label: '4. Bölüm Başkanı — Bilgisayar Müh. (Prof. Dr. Mehmet Yılmaz)',
     email: 'bolumbaskani@selcuk.edu.tr',
-    badge: 'Süper Yetkili',
+    badge: 'Bölüm Başkanı',
     color: 'border-purple-300 bg-purple-50 text-purple-900 hover:bg-purple-100',
   },
   {
-    label: '3. Şirket Paneli / Advisor (Yük. Müh. Burak Çelik)',
-    email: 'danisman@aselsankonya.com.tr',
-    badge: 'Şirket',
+    label: '5. Şirket Paneli / Sorumlu Mühendis (Yük. Müh. Gökhan Yılmaz — TUSAŞ)',
+    email: 'gokhan.yilmaz@tusas.com',
+    badge: 'Şirket Yetkilisi',
     color: 'border-indigo-300 bg-indigo-50 text-indigo-900 hover:bg-indigo-100',
   },
   {
-    label: '4. KPTO / Sigorta Paneli (Mustafa Demir)',
+    label: '6. KPTO / Sigorta Paneli (Mustafa Demir)',
     email: 'kpto@selcuk.edu.tr',
-    badge: 'KPTO',
+    badge: 'KPTO Sigorta',
     color: 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100',
   },
 ];
@@ -288,7 +314,10 @@ export function App() {
                     {user.fullName}
                     {user.role === 'Student' && user.studentNo ? ` (${user.studentNo})` : ''}
                   </p>
-                  <p className="text-[11px] font-semibold text-blue-700">{roleLabels[user.role]}</p>
+                  <p className="text-[11px] font-semibold text-blue-700">
+                    {roleLabels[user.role]}
+                    {user.department ? ` • ${user.department}` : ''}
+                  </p>
                 </div>
 
                 <button
@@ -465,21 +494,26 @@ export function App() {
 
                 <div className="mt-6 border-t border-slate-200 pt-4">
                   <p className="mb-2 text-[11px] font-bold text-slate-500 uppercase">
-                    Demo Hızlı Öğrenci Girişi (Şifre: 123456)
+                    Bölümlere Göre Hızlı Öğrenci Girişi (Şifre: 123456)
                   </p>
-                  <button
-                    type="button"
-                    onClick={(e) => handleLogin(e, STUDENT_DEMO_ACCOUNT.email)}
-                    className={`flex w-full items-center justify-between rounded-xl border p-3 text-left transition ${STUDENT_DEMO_ACCOUNT.color}`}
-                  >
-                    <div>
-                      <p className="text-xs font-extrabold">{STUDENT_DEMO_ACCOUNT.label}</p>
-                      <p className="text-[11px] opacity-80">{STUDENT_DEMO_ACCOUNT.email}</p>
-                    </div>
-                    <span className="rounded-lg bg-white/80 px-2.5 py-1 text-[11px] font-bold shadow-2xs">
-                      Hızlı Giriş →
-                    </span>
-                  </button>
+                  <div className="space-y-2">
+                    {STUDENT_DEMO_ACCOUNTS.map((acc) => (
+                      <button
+                        key={acc.email}
+                        type="button"
+                        onClick={(e) => handleLogin(e, acc.email)}
+                        className={`flex w-full items-center justify-between rounded-xl border p-3 text-left transition ${acc.color}`}
+                      >
+                        <div>
+                          <p className="text-xs font-extrabold">{acc.label}</p>
+                          <p className="text-[11px] opacity-80">{acc.email}</p>
+                        </div>
+                        <span className="rounded-lg bg-white/80 px-2.5 py-1 text-[11px] font-bold shadow-2xs">
+                          {acc.badge} →
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

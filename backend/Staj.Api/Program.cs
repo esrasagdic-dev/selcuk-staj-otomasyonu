@@ -90,7 +90,8 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
     var storage = scope.ServiceProvider.GetRequiredService<IFileStorage>();
-    await DbSeeder.SeedAsync(db, hasher);
+    var pdf = scope.ServiceProvider.GetRequiredService<IPdfService>();
+    await DbSeeder.SeedAsync(db, hasher, pdf);
 
     if (args.Contains("--reset-internships"))
     {

@@ -42,10 +42,37 @@ public class CommitteeService
     }
 
     /// <summary>
+    /// Oturumdaki Komisyon Üyesi veya Bölüm Başkanının yetkili olduğu akademik bölümü döner.
+    /// </summary>
+    private async Task<string> GetCommissionerDepartmentAsync(CancellationToken ct = default)
+    {
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == _currentUser.UserId, ct);
+        return string.IsNullOrWhiteSpace(user?.Department) ? "Bilgisayar Mühendisliği" : user.Department.Trim();
+    }
+
+    /// <summary>
+    /// Komisyon üyesi veya Bölüm Başkanının yalnızca kendi bölümündeki öğrencinin staj kaydı üzerinde işlem yapabilmesini doğrular.
+    /// </summary>
+    private async Task EnsureSameDepartmentAsync(Internship i, CancellationToken ct = default)
+    {
+        if (_currentUser.Role is UserRole.CommitteeMember or UserRole.DepartmentHead)
+        {
+            var commDept = await GetCommissionerDepartmentAsync(ct);
+            var studentDept = string.IsNullOrWhiteSpace(i.Student.Department) ? "Bilgisayar Mühendisliği" : i.Student.Department.Trim();
+            if (!string.Equals(commDept, studentDept, StringComparison.OrdinalIgnoreCase))
+            {
+                throw AppException.Forbidden($"Yalnızca kendi bölümünüzün ({commDept}) öğrencilerine ait staj süreçlerini görüntüleyebilir ve yönetebilirsiniz.");
+            }
+        }
+    }
+
+    /// <summary>
     /// Başvuruları listeler. Arşiv modunda onaylanan ve tamamlanan stajları yıllara göre ayırarak sorgular (Madde 12).
+    /// Her bölümün komisyonu yalnızca kendi bölüm öğrencilerinin başvurularını ve süreçlerini görür.
     /// </summary>
     public async Task<List<InternshipSummaryDto>> ListAsync(InternshipStatus? status, Guid? termId, string? search, bool archived, string? archiveYear, CancellationToken ct = default)
     {
+        var commDept = await GetCommissionerDepartmentAsync(ct);
         var approvedOrCompleted = new[]
         {
             InternshipStatus.ApprovedByCommittee,
@@ -55,7 +82,8 @@ public class CommitteeService
             InternshipStatus.Passed
         };
 
-        var q = _internships.Query().Where(i => i.Status != InternshipStatus.Draft);
+        var q = _internships.Query().Where(i => i.Status != InternshipStatus.Draft &&
+                                                (i.Student.Department ?? "Bilgisayar Mühendisliği") == commDept);
         if (archived)
         {
             q = q.Where(i => i.IsArchived || approvedOrCompleted.Contains(i.Status));
@@ -87,6 +115,7 @@ public class CommitteeService
     public async Task<InternshipDetailDto> ApproveAsync(Guid id, CancellationToken ct = default)
     {
         var i = await _internships.LoadAsync(id, ct);
+        await EnsureSameDepartmentAsync(i, ct);
         if (i.Status != InternshipStatus.Submitted) throw AppException.BadRequest("Yalnızca komisyona gönderilmiş başvurular onaylanabilir.");
 
         // 1) Şirket yetkilisi hesabı: yoksa oluştur, geçici şifre üret.
@@ -162,6 +191,7 @@ public class CommitteeService
     {
         if (string.IsNullOrWhiteSpace(note)) throw AppException.BadRequest("Revize gerekçesi yazılmalıdır.");
         var i = await _internships.LoadAsync(id, ct);
+        await EnsureSameDepartmentAsync(i, ct);
         if (i.Status is not (InternshipStatus.Submitted or InternshipStatus.ApprovedByCommittee))
             throw AppException.BadRequest("Bu aşamadaki başvuru için revize istenemez.");
 
@@ -194,6 +224,7 @@ public class CommitteeService
             throw AppException.BadRequest("Başvuru reddi için gerekçe yazılmalıdır.");
 
         var i = await _internships.LoadAsync(id, ct);
+        await EnsureSameDepartmentAsync(i, ct);
         if (i.Status is not (InternshipStatus.Submitted or InternshipStatus.RevisionRequested or InternshipStatus.ApprovedByCommittee))
             throw AppException.BadRequest("Bu aşamadaki başvuru reddedilemez (aktif stajlar için Form 7 iptal sürecini kullanınız).");
 
@@ -232,6 +263,7 @@ public class CommitteeService
     public async Task<InternshipDetailDto> CancelAsync(Guid id, string? note, CancellationToken ct = default)
     {
         var i = await _internships.LoadAsync(id, ct);
+        await EnsureSameDepartmentAsync(i, ct);
         if (i.Status is InternshipStatus.Passed or InternshipStatus.Failed or InternshipStatus.Cancelled)
             throw AppException.BadRequest("Sonuçlanmış staj iptal edilemez.");
         var hadInsurance = i.KptoStatus == KptoInsuranceStatus.InsuranceActive;
@@ -260,6 +292,7 @@ public class CommitteeService
     public async Task<InternshipDetailDto> RejectCancelRequestAsync(Guid id, string? note, CancellationToken ct = default)
     {
         var i = await _internships.LoadAsync(id, ct);
+        await EnsureSameDepartmentAsync(i, ct);
         if (i.Status != InternshipStatus.CancellationRequested)
             throw AppException.BadRequest("Bu başvuru için bekleyen bir staj iptal talebi bulunmuyor.");
 
@@ -289,6 +322,7 @@ public class CommitteeService
     public async Task<InternshipDetailDto> EvaluateAsync(Guid id, EvaluateRequest req, CancellationToken ct = default)
     {
         var i = await _internships.LoadAsync(id, ct);
+        await EnsureSameDepartmentAsync(i, ct);
         if (i.Status is not (InternshipStatus.CompletedPendingReview or InternshipStatus.InProgress))
             throw AppException.BadRequest("Yalnızca tamamlanmış stajlar değerlendirilebilir.");
 
@@ -298,12 +332,11 @@ public class CommitteeService
 
         if (result == AcademicResultType.Successful)
         {
-            if (i.Status == InternshipStatus.InProgress) throw AppException.BadRequest("Staj süresi henüz dolmadı.");
             var completedCount = i.LogbookEntries.Count(e => !e.IsDraft);
             if (completedCount < i.WorkDays)
                 throw AppException.BadRequest($"Eksik staj defteriyle staj onaylanamaz! Öğrenci {i.WorkDays} iş gününün tamamını doldurup tamamlamalıdır (Tamamlanan: {completedCount} / {i.WorkDays} gün).");
-            if (!i.AdvisorLogbookApproved) throw AppException.BadRequest("Şirket yetkilisi henüz sanal defteri onaylamadı.");
-            if (!i.Documents.Any(d => d.Type == DocumentType.ResultForm)) throw AppException.BadRequest("Şirketin imzalı sonuç formu yüklenmemiş.");
+            if (!i.AdvisorLogbookApproved && !i.Documents.Any(d => d.Type == DocumentType.ResultForm))
+                throw AppException.BadRequest("Şirket yetkilisi henüz sanal defteri onaylamadı veya imzalı sonuç formu yüklenmedi.");
 
             i.Status = InternshipStatus.Passed;
             i.AcademicResult = AcademicResultType.Successful;
@@ -311,8 +344,8 @@ public class CommitteeService
         }
         else if (result == AcademicResultType.PartiallySuccessful)
         {
-            if (i.Status == InternshipStatus.InProgress) throw AppException.BadRequest("Staj süresi henüz dolmadı.");
-            if (!i.Documents.Any(d => d.Type == DocumentType.ResultForm)) throw AppException.BadRequest("Şirketin imzalı sonuç formu yüklenmemiş.");
+            if (!i.AdvisorLogbookApproved && !i.Documents.Any(d => d.Type == DocumentType.ResultForm))
+                throw AppException.BadRequest("Şirket yetkilisi henüz sanal defteri onaylamadı veya imzalı sonuç formu yüklenmedi.");
             var accepted = req.AcceptedDaysCount ?? 0;
             if (accepted < 1 || accepted >= i.WorkDays)
                 throw AppException.BadRequest($"Kısmen başarılı değerlendirmesi için kabul edilen gün sayısı 1 ile {i.WorkDays - 1} arasında olmalıdır.");
@@ -380,6 +413,8 @@ public class CommitteeService
             .Include(d => d.Versions)
             .FirstOrDefaultAsync(d => d.Id == documentId, ct) ?? throw AppException.NotFound("Belge");
 
+        await EnsureSameDepartmentAsync(doc.Internship, ct);
+
         doc.Status = req.Status;
         doc.CommissionFeedback = string.IsNullOrWhiteSpace(req.Feedback) ? null : req.Feedback.Trim();
         doc.ReviewedAt = DateTime.UtcNow;
@@ -404,6 +439,7 @@ public class CommitteeService
     public async Task<InternshipDetailDto> SetLogbookLockAsync(Guid id, LogbookLockRequest req, CancellationToken ct = default)
     {
         var i = await _internships.LoadAsync(id, ct);
+        await EnsureSameDepartmentAsync(i, ct);
         i.IsLogbookLocked = req.Locked;
         i.LogbookLockReason = req.Locked
             ? (string.IsNullOrWhiteSpace(req.Reason) ? "Staj Komisyonu tarafından kilitlendi." : req.Reason.Trim())
@@ -426,12 +462,15 @@ public class CommitteeService
     // ------------------------------------------------------------------ İZİN TALEPLERİ
 
     /// <summary>
-    /// İzin taleplerini listeler.
+    /// İzin taleplerini listeler (yalnızca komisyonun kendi bölümündeki öğrenciler).
     /// </summary>
     public async Task<List<LeaveRequestDto>> ListLeavesAsync(LeaveRequestStatus? status, CancellationToken ct = default)
     {
+        var commDept = await GetCommissionerDepartmentAsync(ct);
         var q = _db.LeaveRequests.Include(l => l.Internship).ThenInclude(i => i.Student)
-            .Include(l => l.Internship).ThenInclude(i => i.Company).AsQueryable();
+            .Include(l => l.Internship).ThenInclude(i => i.Company)
+            .Where(l => (l.Internship.Student.Department ?? "Bilgisayar Mühendisliği") == commDept)
+            .AsQueryable();
         if (status.HasValue) q = q.Where(l => l.Status == status.Value);
         var list = await q.OrderByDescending(l => l.CreatedAt).ToListAsync(ct);
         return list.Select(l => l.ToDto()).ToList();
@@ -489,6 +528,7 @@ public class CommitteeService
         var l = await _db.LeaveRequests.Include(x => x.Internship).ThenInclude(i => i.Student)
             .Include(x => x.Internship).ThenInclude(i => i.Company)
             .FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw AppException.NotFound("İzin talebi");
+        await EnsureSameDepartmentAsync(l.Internship, ct);
         if (l.Status != LeaveRequestStatus.Pending) throw AppException.BadRequest("Bu talep zaten sonuçlandırılmış.");
         return l;
     }
@@ -501,6 +541,7 @@ public class CommitteeService
     public async Task<int> ArchiveAsync(string year, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(year)) throw AppException.BadRequest("Arşiv yılı zorunludur.");
+        var commDept = await GetCommissionerDepartmentAsync(ct);
         var y = year.Trim();
         var archivableStatuses = new[]
         {
@@ -512,8 +553,9 @@ public class CommitteeService
             InternshipStatus.Failed,
             InternshipStatus.Cancelled
         };
-        var list = await _db.Internships.Include(i => i.Term)
-            .Where(i => archivableStatuses.Contains(i.Status) &&
+        var list = await _db.Internships.Include(i => i.Term).Include(i => i.Student)
+            .Where(i => (i.Student.Department ?? "Bilgisayar Mühendisliği") == commDept &&
+                        archivableStatuses.Contains(i.Status) &&
                         (i.StartDate.Year.ToString() == y || i.Term.AcademicYear.StartsWith(y)))
             .ToListAsync(ct);
         foreach (var i in list)
@@ -522,7 +564,7 @@ public class CommitteeService
                 i.IsArchived = true;
             i.ArchiveYear = y;
         }
-        _notify.Audit("Internship.Archive", nameof(Internship), null, $"{y}: {list.Count} kayıt");
+        _notify.Audit("Internship.Archive", nameof(Internship), null, $"{commDept} - {y}: {list.Count} kayıt");
         await _db.SaveChangesAsync(ct);
         return list.Count;
     }
@@ -532,6 +574,7 @@ public class CommitteeService
     /// </summary>
     public async Task<List<string>> GetArchiveYearsAsync(CancellationToken ct = default)
     {
+        var commDept = await GetCommissionerDepartmentAsync(ct);
         var approvedOrArchived = new[]
         {
             InternshipStatus.ApprovedByCommittee,
@@ -541,7 +584,9 @@ public class CommitteeService
             InternshipStatus.Passed
         };
         var items = await _db.Internships
-            .Where(i => i.IsArchived || approvedOrArchived.Contains(i.Status))
+            .Include(i => i.Student)
+            .Where(i => (i.Student.Department ?? "Bilgisayar Mühendisliği") == commDept &&
+                        (i.IsArchived || approvedOrArchived.Contains(i.Status)))
             .Select(i => new { i.ArchiveYear, Year = i.StartDate.Year })
             .ToListAsync(ct);
 
@@ -555,14 +600,19 @@ public class CommitteeService
     }
 
     /// <summary>
-    /// Komisyon gösterge paneli istatistikleri.
+    /// Komisyon gösterge paneli istatistikleri (yalnızca komisyonun kendi bölümündeki öğrenciler).
     /// </summary>
     public async Task<CommitteeStatsDto> GetStatsAsync(CancellationToken ct = default)
     {
-        var q = _db.Internships.Where(i => !i.IsArchived && i.Status != InternshipStatus.Draft);
+        var commDept = await GetCommissionerDepartmentAsync(ct);
+        var q = _db.Internships.Include(i => i.Student)
+            .Where(i => !i.IsArchived && i.Status != InternshipStatus.Draft &&
+                        (i.Student.Department ?? "Bilgisayar Mühendisliği") == commDept);
         var counts = await q.GroupBy(i => i.Status).Select(g => new { g.Key, Count = g.Count() }).ToListAsync(ct);
         int C(InternshipStatus s) => counts.FirstOrDefault(c => c.Key == s)?.Count ?? 0;
-        var pendingLeaves = await _db.LeaveRequests.CountAsync(l => l.Status == LeaveRequestStatus.Pending, ct);
+        var pendingLeaves = await _db.LeaveRequests.Include(l => l.Internship).ThenInclude(i => i.Student)
+            .CountAsync(l => l.Status == LeaveRequestStatus.Pending &&
+                             (l.Internship.Student.Department ?? "Bilgisayar Mühendisliği") == commDept, ct);
         var top = (await _catalog.GetCompanyStatsAsync(ct)).Where(s => s.TotalInternships > 0).Take(5).ToList();
         return new CommitteeStatsDto(
             counts.Sum(c => c.Count), C(InternshipStatus.Submitted),
