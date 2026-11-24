@@ -58,6 +58,7 @@ import {
 } from '../api';
 import { DocumentPreviewModal, type PreviewSource } from './DocumentPreviewModal';
 import { AuthImage } from './AuthImage';
+import { OfficialDocumentsView } from './OfficialDocumentsView';
 
 interface Props {
   user: UserDto;
@@ -74,7 +75,7 @@ const APPROVED_STATUSES = [
 
 export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
   const [mainTab, setMainTab] = useState<
-    'internships' | 'documents' | 'logbook' | 'leaves' | 'announcements'
+    'internships' | 'documents' | 'logbook' | 'leaves' | 'announcements' | 'guide'
   >('internships');
   const [guideChecked, setGuideChecked] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(!user.hasAcceptedGuide);
@@ -103,6 +104,8 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
     address: '',
     phone: '',
     email: '',
+    webSite: '',
+    taxNumber: '',
   });
   const [advisorName, setAdvisorName] = useState('');
   const [advisorEmail, setAdvisorEmail] = useState('');
@@ -358,6 +361,16 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
     setUseNewCompany(false);
     setCompanyId(companies[0]?.id ?? '');
     setCompanySearch('');
+    setNewCompany({
+      name: '',
+      sector: '',
+      city: '',
+      address: '',
+      phone: '',
+      email: '',
+      webSite: '',
+      taxNumber: '',
+    });
     setAdvisorName('');
     setAdvisorEmail('');
     setDepartment('Yazılım Geliştirme / Ar-Ge');
@@ -406,7 +419,13 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
     const payload = {
       termId: resolvedTermId,
       companyId: useNewCompany ? null : companyId || null,
-      newCompany: useNewCompany ? newCompany : null,
+      newCompany: useNewCompany
+        ? {
+            ...newCompany,
+            webSite: newCompany.webSite.trim() || null,
+            taxNumber: newCompany.taxNumber.trim() || null,
+          }
+        : null,
       advisorName,
       advisorEmail,
       workDays,
@@ -1059,6 +1078,22 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
             <Megaphone className="h-4 w-4" />
             Duyurular, Takvim & Firma İlanları ({announcements.length + listings.length})
           </button>
+
+          {/* 6. Resmi Evrak Kılavuzu & e-Devlet SPAS Rehberi */}
+          <button
+            onClick={() => {
+              setMainTab('guide');
+              setMsg(null);
+            }}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
+              mainTab === 'guide'
+                ? 'bg-blue-700 text-white shadow-xs'
+                : 'bg-teal-50 text-teal-900 border border-teal-200 hover:bg-teal-100'
+            }`}
+          >
+            <FileText className="h-4 w-4" />
+            Resmi Evrak & SPAS Rehberi
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -1337,6 +1372,20 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                         placeholder="Firma Kurumsal E-Posta"
                         value={newCompany.email}
                         onChange={(e) => setNewCompany({ ...newCompany, email: e.target.value })}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Firma Web Sitesi (Örn: https://firma.com)"
+                        value={newCompany.webSite}
+                        onChange={(e) => setNewCompany({ ...newCompany, webSite: e.target.value })}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Vergi Numarası (Opsiyonel)"
+                        value={newCompany.taxNumber}
+                        onChange={(e) => setNewCompany({ ...newCompany, taxNumber: e.target.value })}
                         className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
                       />
                       <input
@@ -1781,6 +1830,25 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                     </div>
                     <h3 className="mt-3 font-bold text-slate-900">{l.title}</h3>
                     <p className="mt-1 text-xs font-extrabold text-indigo-700">{l.companyName}</p>
+                    {(l.sector || l.department || l.quota != null) && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {l.sector && (
+                          <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                            {l.sector}
+                          </span>
+                        )}
+                        {l.department && (
+                          <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-800">
+                            {l.department}
+                          </span>
+                        )}
+                        {l.quota != null && (
+                          <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                            Kontenjan: {l.quota}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <p className="mt-2 text-xs leading-relaxed text-slate-600">{l.description}</p>
                   </div>
                   <div className="mt-4 space-y-2 border-t border-emerald-100 pt-3 text-xs text-slate-600">
@@ -1800,9 +1868,14 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                         } else {
                           setUseNewCompany(true);
                           setNewCompany({
-                            ...newCompany,
                             name: l.companyName,
+                            sector: l.sector || '',
                             city: l.city || '',
+                            address: '',
+                            phone: '',
+                            email: '',
+                            webSite: '',
+                            taxNumber: '',
                           });
                         }
                       }}
@@ -1816,6 +1889,12 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
             </div>
           </div>
         </div>
+      ) : mainTab === 'guide' ? (
+        <OfficialDocumentsView
+          selectedInternship={selected ?? null}
+          studentNo={verifiedStudentNo}
+          onGoToDocuments={() => setMainTab('documents')}
+        />
       ) : internships.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
           <Briefcase className="mx-auto h-10 w-10 text-slate-400" />
@@ -1861,6 +1940,25 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                           <b>{formatDate(selected.endDate)}</b> ({selected.workDays} İş Günü • Cumartesi:{' '}
                           <b>{selected.worksOnSaturday ? 'Çalışıyor' : 'Çalışmıyor'}</b>)
                         </p>
+                        {(selected.sgkRegistrationNo || selected.extensionSgkProcessed || selected.sgkExitNo) && (
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            {selected.sgkRegistrationNo && (
+                              <span className="inline-flex items-center rounded-full border border-emerald-300 bg-white px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                                SGK İşe Giriş Tescil No: {selected.sgkRegistrationNo}
+                              </span>
+                            )}
+                            {selected.extensionSgkProcessed && (
+                              <span className="inline-flex items-center rounded-full border border-teal-300 bg-white px-2.5 py-0.5 text-[11px] font-bold text-teal-800">
+                                ✔ Ek Prim Tescili İşlendi
+                              </span>
+                            )}
+                            {selected.sgkExitNo && (
+                              <span className="inline-flex items-center rounded-full border border-purple-300 bg-white px-2.5 py-0.5 text-[11px] font-bold text-purple-800">
+                                SGK Çıkış Belge No: {selected.sgkExitNo}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 

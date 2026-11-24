@@ -117,6 +117,8 @@ export interface CompanyDto {
   phone?: string;
   email?: string;
   isVerified: boolean;
+  webSite?: string | null;
+  taxNumber?: string | null;
 }
 
 export interface CompanyStatDto {
@@ -141,6 +143,9 @@ export interface ListingDto {
   deadline?: string;
   isActive: boolean;
   createdAt: string;
+  quota?: number | null;
+  sector?: string | null;
+  department?: string | null;
 }
 
 export interface AnnouncementDto {
@@ -326,6 +331,10 @@ export interface InternshipDetailDto {
   isLogbookLocked?: boolean;
   logbookLockReason?: string | null;
   coverPageDataJson?: string | null;
+  sgkRegistrationNo?: string | null;
+  extensionSgkProcessed?: boolean;
+  sgkExitProcessed?: boolean;
+  sgkExitNo?: string | null;
 }
 
 export interface KptoRowDto {
@@ -349,6 +358,17 @@ export interface KptoRowDto {
   spasDocumentId?: string;
   salaryReceiptCount: number;
   dateChanged: boolean;
+  sgkRegistrationNo?: string | null;
+  extensionSgkProcessed?: boolean;
+  extensionSgkProcessedAt?: string | null;
+  extensionSgkNote?: string | null;
+  sgkExitProcessed?: boolean;
+  sgkExitProcessedAt?: string | null;
+  sgkExitNo?: string | null;
+  status?: InternshipStatus;
+  isArchived?: boolean;
+  archiveYear?: string | null;
+  originalEndDate?: string | null;
 }
 
 export interface SalaryReceiptDto {
@@ -359,6 +379,19 @@ export interface SalaryReceiptDto {
   companyName: string;
   fileName: string;
   uploadedAt: string;
+  isVerifiedByKpto?: boolean;
+  verifiedByKptoAt?: string | null;
+}
+
+export interface EmailLogDto {
+  id: string;
+  internshipId?: string | null;
+  toEmail: string;
+  subject: string;
+  htmlBody: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  sentAt: string;
 }
 
 export interface NotificationDto {

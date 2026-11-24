@@ -51,6 +51,21 @@ public class CompanyListing
     public DateOnly? Deadline { get; set; }
 
     /// <summary>
+    /// Firmanın ayırdığı stajyer kontenjanı.
+    /// </summary>
+    public int? Quota { get; set; }
+
+    /// <summary>
+    /// İlanın ilgili olduğu sektör.
+    /// </summary>
+    public string? Sector { get; set; }
+
+    /// <summary>
+    /// İlanın ilgili olduğu çalışma bölümü / departman.
+    /// </summary>
+    public string? Department { get; set; }
+
+    /// <summary>
     /// İlanın yayında olup olmadığı.
     /// </summary>
     public bool IsActive { get; set; } = true;

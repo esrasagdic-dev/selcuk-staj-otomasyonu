@@ -68,6 +68,15 @@ public static class DbSeeder
                     ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "IsLogbookLocked" boolean NOT NULL DEFAULT FALSE;
                     ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "LogbookLockReason" text NULL;
                     ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "CoverPageDataJson" text NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "SgkRegistrationNo" text NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "ExtensionSgkProcessed" boolean NOT NULL DEFAULT FALSE;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "ExtensionSgkProcessedAt" timestamp with time zone NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "ExtensionSgkNote" text NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "SgkExitProcessed" boolean NOT NULL DEFAULT FALSE;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "SgkExitProcessedAt" timestamp with time zone NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "SgkExitNo" text NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "ReportDeadlineNotified" boolean NOT NULL DEFAULT FALSE;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "InsuranceReminderNotified" boolean NOT NULL DEFAULT FALSE;
                     ALTER TABLE "Terms" ADD COLUMN IF NOT EXISTS "ApplicationStartDate" date NULL;
                     ALTER TABLE "Terms" ADD COLUMN IF NOT EXISTS "IsSaturdayAllowed" boolean NOT NULL DEFAULT TRUE;
                     ALTER TABLE "Documents" ADD COLUMN IF NOT EXISTS "Status" integer NOT NULL DEFAULT 0;
@@ -75,6 +84,24 @@ public static class DbSeeder
                     ALTER TABLE "Documents" ADD COLUMN IF NOT EXISTS "VersionNumber" integer NOT NULL DEFAULT 1;
                     ALTER TABLE "Documents" ADD COLUMN IF NOT EXISTS "ReviewedAt" timestamp with time zone NULL;
                     ALTER TABLE "Documents" ADD COLUMN IF NOT EXISTS "ReviewedById" uuid NULL;
+                    ALTER TABLE "Documents" ADD COLUMN IF NOT EXISTS "IsVerifiedByKpto" boolean NOT NULL DEFAULT FALSE;
+                    ALTER TABLE "Documents" ADD COLUMN IF NOT EXISTS "VerifiedByKptoAt" timestamp with time zone NULL;
+                    ALTER TABLE "Documents" ADD COLUMN IF NOT EXISTS "VerifiedByKptoUserId" uuid NULL;
+                    ALTER TABLE "Companies" ADD COLUMN IF NOT EXISTS "WebSite" text NULL;
+                    ALTER TABLE "Companies" ADD COLUMN IF NOT EXISTS "TaxNumber" text NULL;
+                    ALTER TABLE "CompanyListings" ADD COLUMN IF NOT EXISTS "Quota" integer NULL;
+                    ALTER TABLE "CompanyListings" ADD COLUMN IF NOT EXISTS "Sector" text NULL;
+                    ALTER TABLE "CompanyListings" ADD COLUMN IF NOT EXISTS "Department" text NULL;
+                    CREATE TABLE IF NOT EXISTS "EmailLogs" (
+                        "Id" uuid NOT NULL CONSTRAINT "PK_EmailLogs" PRIMARY KEY,
+                        "InternshipId" uuid NULL,
+                        "ToEmail" text NOT NULL,
+                        "Subject" text NOT NULL,
+                        "HtmlBody" text NOT NULL,
+                        "IsSuccess" boolean NOT NULL DEFAULT TRUE,
+                        "ErrorMessage" text NULL,
+                        "SentAt" timestamp with time zone NOT NULL
+                    );
                     CREATE TABLE IF NOT EXISTS "DocumentVersions" (
                         "Id" uuid NOT NULL CONSTRAINT "PK_DocumentVersions" PRIMARY KEY,
                         "DocumentId" uuid NOT NULL REFERENCES "Documents"("Id") ON DELETE CASCADE,
@@ -150,6 +177,16 @@ public static class DbSeeder
                         "UploadedById" TEXT NOT NULL,
                         "UploadedAt" TEXT NOT NULL
                     );
+                    CREATE TABLE IF NOT EXISTS "EmailLogs" (
+                        "Id" TEXT NOT NULL CONSTRAINT "PK_EmailLogs" PRIMARY KEY,
+                        "InternshipId" TEXT NULL,
+                        "ToEmail" TEXT NOT NULL,
+                        "Subject" TEXT NOT NULL,
+                        "HtmlBody" TEXT NOT NULL,
+                        "IsSuccess" INTEGER NOT NULL DEFAULT 1,
+                        "ErrorMessage" TEXT NULL,
+                        "SentAt" TEXT NOT NULL
+                    );
                     """);
             }
             catch
@@ -186,7 +223,24 @@ public static class DbSeeder
                 "ALTER TABLE \"LogbookEntries\" ADD COLUMN \"ImageStoredFileName\" TEXT NULL;",
                 "ALTER TABLE \"LogbookEntries\" ADD COLUMN \"ImageOriginalFileName\" TEXT NULL;",
                 "ALTER TABLE \"LogbookEntries\" ADD COLUMN \"ImageContentType\" TEXT NULL;",
-                "ALTER TABLE \"LogbookEntries\" ADD COLUMN \"ImageCaption\" TEXT NULL;"
+                "ALTER TABLE \"LogbookEntries\" ADD COLUMN \"ImageCaption\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"SgkRegistrationNo\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"ExtensionSgkProcessed\" INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"ExtensionSgkProcessedAt\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"ExtensionSgkNote\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"SgkExitProcessed\" INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"SgkExitProcessedAt\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"SgkExitNo\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"ReportDeadlineNotified\" INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"InsuranceReminderNotified\" INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE \"Documents\" ADD COLUMN \"IsVerifiedByKpto\" INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE \"Documents\" ADD COLUMN \"VerifiedByKptoAt\" TEXT NULL;",
+                "ALTER TABLE \"Documents\" ADD COLUMN \"VerifiedByKptoUserId\" TEXT NULL;",
+                "ALTER TABLE \"Companies\" ADD COLUMN \"WebSite\" TEXT NULL;",
+                "ALTER TABLE \"Companies\" ADD COLUMN \"TaxNumber\" TEXT NULL;",
+                "ALTER TABLE \"CompanyListings\" ADD COLUMN \"Quota\" INTEGER NULL;",
+                "ALTER TABLE \"CompanyListings\" ADD COLUMN \"Sector\" TEXT NULL;",
+                "ALTER TABLE \"CompanyListings\" ADD COLUMN \"Department\" TEXT NULL;"
             };
             foreach (var sql in alterColumns)
             {
@@ -227,6 +281,7 @@ public static class DbSeeder
                 Address = "Konya Teknoloji Endüstri Bölgesi, Selçuklu / Konya",
                 Phone = "0332 502 00 00",
                 Email = "ik@aselsankonya.com.tr",
+                WebSite = "https://www.aselsankonya.com.tr",
                 IsVerified = true
             };
             var company2 = new Company
@@ -237,6 +292,7 @@ public static class DbSeeder
                 Address = "Mustafa Kemal Mah. 2120 Cad. No:39 Çankaya / Ankara",
                 Phone = "0312 219 57 87",
                 Email = "staj@havelsan.com.tr",
+                WebSite = "https://www.havelsan.com.tr",
                 IsVerified = true
             };
             var company3 = new Company
@@ -247,6 +303,7 @@ public static class DbSeeder
                 Address = "İTÜ Ayazağa Kampüsü Teknokent, Maslak / İstanbul",
                 Phone = "0212 329 70 00",
                 Email = "kariyer@innova.com.tr",
+                WebSite = "https://www.innova.com.tr",
                 IsVerified = true
             };
             var company4 = new Company
@@ -257,6 +314,7 @@ public static class DbSeeder
                 Address = "Selçuk Üniversitesi Alaeddin Keykubat Kampüsü Teknokent, Selçuklu / Konya",
                 Phone = "0332 241 05 00",
                 Email = "staj@konyateknokent.com.tr",
+                WebSite = "https://www.konyateknokent.com.tr",
                 IsVerified = true
             };
             db.Companies.AddRange(company1, company2, company3, company4);
@@ -338,6 +396,9 @@ public static class DbSeeder
                     Contact = "ik@aselsankonya.com.tr",
                     City = "Konya",
                     Deadline = new DateOnly(2027, 6, 15),
+                    Quota = 6,
+                    Sector = "Savunma Sanayi",
+                    Department = "Gömülü Sistemler",
                     IsActive = true,
                     CreatedById = committee.Id
                 },
@@ -350,6 +411,9 @@ public static class DbSeeder
                     Contact = "staj@konyateknokent.com.tr",
                     City = "Konya",
                     Deadline = new DateOnly(2027, 6, 20),
+                    Quota = 4,
+                    Sector = "Kurumsal Yazılım",
+                    Department = "Web & Bulut Yazılım",
                     IsActive = true,
                     CreatedById = committee.Id
                 },
@@ -362,6 +426,9 @@ public static class DbSeeder
                     Contact = "staj@havelsan.com.tr",
                     City = "Ankara",
                     Deadline = new DateOnly(2027, 5, 30),
+                    Quota = 5,
+                    Sector = "Yazılım ve Siber Güvenlik",
+                    Department = "Siber Güvenlik / SOC",
                     IsActive = true,
                     CreatedById = head.Id
                 });
@@ -655,6 +722,7 @@ public static class DbSeeder
 
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Notifications\";");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AuditLogs\";");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"EmailLogs\";");
         await db.SaveChangesAsync();
     }
 }

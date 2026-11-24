@@ -148,9 +148,9 @@ public class CommitteeService
             {(tempPassword is null ? "Mevcut şifrenizle giriş yapabilirsiniz." : $"Geçici şifreniz: <b>{tempPassword}</b> (ilk girişte değiştirmeniz istenecektir)")}</p>
             <p>Saygılarımızla,<br/>Staj Komisyonu</p>
             """;
-        await _notify.TryEmailAsync(advisor.Email, $"Stajyer Onayı - {i.Student.FullName}", body, ct);
+        await _notify.TryEmailAsync(advisor.Email, $"Stajyer Onayı - {i.Student.FullName}", body, ct, i.Id);
         await _notify.TryEmailAsync(i.Student.Email, "Staj Başvurunuz Onaylandı",
-            $"<p>Sayın {i.Student.FullName},</p><p>{i.Company.Name} firmasındaki staj başvurunuz onaylanmıştır. Sigorta girişiniz KPTO tarafından yapılacaktır.</p>", ct);
+            $"<p>Sayın {i.Student.FullName},</p><p>{i.Company.Name} firmasındaki staj başvurunuz onaylanmıştır. Sigorta girişiniz KPTO tarafından yapılacaktır.</p>", ct, i.Id);
 
         return await _internships.ToDetailAsync(i, ct);
     }
@@ -181,7 +181,7 @@ public class CommitteeService
         _notify.Audit("Internship.RequestRevision", nameof(Internship), i.Id, note);
         await _db.SaveChangesAsync(ct);
         await _notify.TryEmailAsync(i.Student.Email, "Staj Başvurunuz İçin Revize İstendi",
-            $"<p>Sayın {i.Student.FullName},</p><p>Başvurunuz için komisyon revize istemiştir:</p><blockquote>{System.Net.WebUtility.HtmlEncode(note)}</blockquote>", ct);
+            $"<p>Sayın {i.Student.FullName},</p><p>Başvurunuz için komisyon revize istemiştir:</p><blockquote>{System.Net.WebUtility.HtmlEncode(note)}</blockquote>", ct, i.Id);
         return await _internships.ToDetailAsync(i, ct);
     }
 
@@ -222,7 +222,7 @@ public class CommitteeService
         await _db.SaveChangesAsync(ct);
 
         await _notify.TryEmailAsync(i.Student.Email, "Staj Başvurunuz Reddedildi",
-            $"<p>Sayın {i.Student.FullName},</p><p>{i.Type.ToTurkish()} başvurunuz Staj Komisyonu tarafından aşağıdaki gerekçe ile reddedilmiştir:</p><blockquote>{System.Net.WebUtility.HtmlEncode(trimmedNote)}</blockquote><p>Gerekli düzenlemeleri yaptıktan sonra yeni bir staj başvurusu oluşturabilirsiniz.</p>", ct);
+            $"<p>Sayın {i.Student.FullName},</p><p>{i.Type.ToTurkish()} başvurunuz Staj Komisyonu tarafından aşağıdaki gerekçe ile reddedilmiştir:</p><blockquote>{System.Net.WebUtility.HtmlEncode(trimmedNote)}</blockquote><p>Gerekli düzenlemeleri yaptıktan sonra yeni bir staj başvurusu oluşturabilirsiniz.</p>", ct, i.Id);
         return await _internships.ToDetailAsync(i, ct);
     }
 
@@ -363,7 +363,7 @@ public class CommitteeService
         await _db.SaveChangesAsync(ct);
         await _notify.TryEmailAsync(i.Student.Email, "Staj Değerlendirme Sonucu",
             $"<p>Sayın {i.Student.FullName},</p><p>{i.Type.ToTurkish()} değerlendirme sonucunuz: <b>{resultLabel}{daySummary}</b></p>" +
-            (string.IsNullOrWhiteSpace(i.EvaluationNote) ? "" : $"<blockquote>{System.Net.WebUtility.HtmlEncode(i.EvaluationNote)}</blockquote>"), ct);
+            (string.IsNullOrWhiteSpace(i.EvaluationNote) ? "" : $"<blockquote>{System.Net.WebUtility.HtmlEncode(i.EvaluationNote)}</blockquote>"), ct, i.Id);
         return await _internships.ToDetailAsync(i, ct);
     }
 
@@ -454,6 +454,8 @@ public class CommitteeService
         l.NewEndDate = newEnd;
         i.EndDate = newEnd;
         i.EndingSoonNotified = false;
+        i.ExtensionSgkProcessed = false;
+        i.ExtensionSgkProcessedAt = null;
         i.UpdatedAt = DateTime.UtcNow;
 
         _notify.ToRole(UserRole.KptoOfficer, "Sigorta Bitiş Tarihi Değişti",

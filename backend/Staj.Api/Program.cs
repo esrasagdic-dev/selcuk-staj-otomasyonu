@@ -341,6 +341,7 @@ committee.MapPost("/archive/{year}", async (string year, CommitteeService svc, C
 });
 committee.MapGet("/archive/years", (CommitteeService svc, CancellationToken ct) => svc.GetArchiveYearsAsync(ct));
 committee.MapGet("/stats", (CommitteeService svc, CancellationToken ct) => svc.GetStatsAsync(ct));
+committee.MapGet("/email-logs", (Guid? internshipId, NotificationService svc, CancellationToken ct) => svc.GetEmailLogsAsync(internshipId, ct));
 committee.MapPost("/reset-internships", (CommitteeService svc, CancellationToken ct) => svc.ResetAllInternshipsAsync(ct));
 committee.MapPost("/lifecycle/run", async (DateOnly? simulatedToday, LifecycleService svc, CancellationToken ct) =>
 {
@@ -367,10 +368,21 @@ kpto.MapGet("/export", async (KptoInsuranceStatus? status, KptoService svc, Canc
     var f = await svc.ExportAsync(status, ct);
     return Results.File(f.Content, f.ContentType, f.FileName);
 });
-kpto.MapPost("/internships/{id:guid}/start-insurance", (Guid id, KptoService svc, CancellationToken ct) => svc.StartInsuranceAsync(id, ct));
+kpto.MapPost("/internships/{id:guid}/start-insurance", (Guid id, StartInsuranceRequest? req, KptoService svc, CancellationToken ct) => svc.StartInsuranceAsync(id, req, ct));
 kpto.MapPost("/internships/{id:guid}/not-started", (Guid id, NoteRequest req, KptoService svc, CancellationToken ct) => svc.MarkNotStartedAsync(id, req.Note, ct));
 kpto.MapPost("/internships/{id:guid}/pending", (Guid id, KptoService svc, CancellationToken ct) => svc.MoveToPendingAsync(id, ct));
+kpto.MapGet("/extensions", (KptoService svc, CancellationToken ct) => svc.ListExtensionsAsync(ct));
+kpto.MapPost("/internships/{id:guid}/process-extension", (Guid id, KptoProcessRequest? req, KptoService svc, CancellationToken ct) => svc.ProcessExtensionAsync(id, req, ct));
+kpto.MapGet("/exits", (KptoService svc, CancellationToken ct) => svc.ListExitsAsync(ct));
+kpto.MapPost("/internships/{id:guid}/process-exit", (Guid id, KptoProcessRequest? req, KptoService svc, CancellationToken ct) => svc.ProcessExitAsync(id, req, ct));
 kpto.MapGet("/salary-receipts", (KptoService svc, CancellationToken ct) => svc.ListSalaryReceiptsAsync(ct));
+kpto.MapPost("/salary-receipts/{documentId:guid}/verify", (Guid documentId, KptoService svc, CancellationToken ct) => svc.VerifySalaryReceiptAsync(documentId, ct));
+kpto.MapGet("/archive", (string? year, KptoService svc, CancellationToken ct) => svc.ListArchiveAsync(year, ct));
+kpto.MapGet("/archive/export", async (string? year, KptoService svc, CancellationToken ct) =>
+{
+    var f = await svc.ExportArchiveAsync(year, ct);
+    return Results.File(f.Content, f.ContentType, f.FileName);
+});
 
 // =========================================================================
 //  7. BİLDİRİMLER

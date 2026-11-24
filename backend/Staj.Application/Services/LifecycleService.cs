@@ -35,7 +35,9 @@ namespace Staj.Application.Services
         {
             WorkDayCalculator.SimulatedToday = today;
             var changed = 0;
-            var list = await _db.Internships.Include(i => i.Student).Include(i => i.Company)
+            var list = await _db.Internships
+                .Include(i => i.Student).Include(i => i.Company).Include(i => i.Term)
+                .Include(i => i.Documents).Include(i => i.LogbookEntries)
                 .Where(i => i.Status == InternshipStatus.ApprovedByCommittee ||
                             i.Status == InternshipStatus.InsuranceStarted ||
                             i.Status == InternshipStatus.InProgress ||
@@ -44,6 +46,18 @@ namespace Staj.Application.Services
 
             foreach (var i in list)
             {
+                if (i.Status == InternshipStatus.ApprovedByCommittee &&
+                    i.KptoStatus == KptoInsuranceStatus.Pending &&
+                    !i.InsuranceReminderNotified &&
+                    i.StartDate.AddDays(-5) <= today)
+                {
+                    i.InsuranceReminderNotified = true;
+                    _notify.ToRole(UserRole.KptoOfficer, "⚠️ Acil SGK İşe Giriş Hatırlatması",
+                        $"{i.Student.FullName} ({i.Company.Name}) staj başlangıcına 5 günden az kaldı ({i.StartDate:dd.MM.yyyy}) — SGK işe giriş işlemi bekliyor.",
+                        NotificationType.Warning, i.Id);
+                    changed++;
+                }
+
                 if ((i.Status == InternshipStatus.InsuranceStarted || i.Status == InternshipStatus.ApprovedByCommittee) && today >= i.StartDate && today <= i.EndDate)
                 {
                     if (i.KptoStatus != KptoInsuranceStatus.InsuranceActive)
@@ -76,7 +90,24 @@ namespace Staj.Application.Services
                         $"Stajınız {i.EndDate:dd.MM.yyyy} tarihinde sona erecektir. Lütfen sanal staj defterinizi ({i.WorkDays} iş günü) eksiksiz tamamlayıp sorumlu mühendise göndermeyi ve zorunlu belgelerinizi yüklemeyi unutmayınız.",
                         NotificationType.Warning, i.Id);
                     await _notify.TryEmailAsync(i.Student.Email, "Stajınız Bitmek Üzere",
-                        $"<p>Sayın {i.Student.FullName},</p><p>Stajınız {i.EndDate:dd.MM.yyyy} tarihinde sona erecektir. Lütfen sanal staj defterinizi tamamlayınız.</p>", ct);
+                        $"<p>Sayın {i.Student.FullName},</p><p>Stajınız {i.EndDate:dd.MM.yyyy} tarihinde sona erecektir. Lütfen sanal staj defterinizi tamamlayınız.</p>", ct, i.Id);
+                    changed++;
+                }
+
+                if (i.Status == InternshipStatus.CompletedPendingReview &&
+                    !i.ReportDeadlineNotified &&
+                    i.Term != null &&
+                    i.Term.ReportDeadline.AddDays(-3) <= today &&
+                    (!i.AdvisorLogbookApproved ||
+                     !i.Documents.Any(d => d.Type == DocumentType.ResultForm) ||
+                     i.LogbookEntries.Count(e => !e.IsDraft) < i.WorkDays))
+                {
+                    i.ReportDeadlineNotified = true;
+                    _notify.ToUser(i.StudentId, "⏰ Rapor ve Evrak Teslim Son Tarihi Yaklaşıyor!",
+                        $"Dönem rapor son teslim tarihi ({i.Term.ReportDeadline:dd.MM.yyyy}) yaklaşıyor. Eksik sanal defter, sorumlu mühendis onayı veya imzalı Form 4 evraklarınızı tamamlayınız.",
+                        NotificationType.Warning, i.Id);
+                    await _notify.TryEmailAsync(i.Student.Email, "Staj Raporu Son Teslim Hatırlatması",
+                        $"<p>Sayın {i.Student.FullName},</p><p>{i.Term.Name} için rapor ve sonuç evrakı son teslim tarihi (<b>{i.Term.ReportDeadline:dd.MM.yyyy}</b>) yaklaşmaktadır. Eksik defter/imzalı form işlemlerinizi tamamlayınız.</p>", ct, i.Id);
                     changed++;
                 }
             }

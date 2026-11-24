@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
+  Archive,
   CheckCircle2,
   Download,
+  FileOutput,
   FileSpreadsheet,
+  PlusCircle,
   Receipt,
   ShieldCheck,
   XCircle,
@@ -13,19 +16,39 @@ import {
   downloadBlob,
   formatDate,
   getErrorMessage,
+  statusLabels,
   type KptoInsuranceStatus,
   type KptoRowDto,
   type SalaryReceiptDto,
 } from '../api';
 
+type KptoTab =
+  | 'Pending'
+  | 'InsuranceActive'
+  | 'InsuranceNotStarted'
+  | 'Extensions'
+  | 'Exits'
+  | 'Receipts'
+  | 'Archive';
+
 export const KptoPanel: React.FC = () => {
-  const [tab, setTab] = useState<'Pending' | 'InsuranceActive' | 'InsuranceNotStarted' | 'Receipts'>('Pending');
+  const [tab, setTab] = useState<KptoTab>('Pending');
   const [rows, setRows] = useState<KptoRowDto[]>([]);
   const [receipts, setReceipts] = useState<SalaryReceiptDto[]>([]);
+  const [archiveYear, setArchiveYear] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [rejectModal, setRejectModal] = useState<{ id: string; studentName: string } | null>(null);
   const [rejectNote, setRejectNote] = useState('');
+  const [startModal, setStartModal] = useState<{ id: string; studentName: string } | null>(null);
+  const [sgkRegNo, setSgkRegNo] = useState('');
+  const [processModal, setProcessModal] = useState<{
+    mode: 'extension' | 'exit';
+    id: string;
+    studentName: string;
+  } | null>(null);
+  const [refNo, setRefNo] = useState('');
+  const [processNote, setProcessNote] = useState('');
 
   const loadData = async () => {
     setLoading(true);
@@ -33,6 +56,17 @@ export const KptoPanel: React.FC = () => {
       if (tab === 'Receipts') {
         const { data } = await api.get<SalaryReceiptDto[]>('/kpto/salary-receipts');
         setReceipts(data);
+      } else if (tab === 'Extensions') {
+        const { data } = await api.get<KptoRowDto[]>('/kpto/extensions');
+        setRows(data);
+      } else if (tab === 'Exits') {
+        const { data } = await api.get<KptoRowDto[]>('/kpto/exits');
+        setRows(data);
+      } else if (tab === 'Archive') {
+        const { data } = await api.get<KptoRowDto[]>('/kpto/archive', {
+          params: archiveYear ? { year: archiveYear } : undefined,
+        });
+        setRows(data);
       } else {
         const { data } = await api.get<KptoRowDto[]>('/kpto/internships', {
           params: { status: tab },
@@ -48,15 +82,64 @@ export const KptoPanel: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [tab]);
+  }, [tab, archiveYear]);
 
-  const handleStartInsurance = async (row: KptoRowDto) => {
+  const handleStartInsuranceSubmit = async () => {
+    if (!startModal) return;
     setMsg(null);
     try {
-      await api.post(`/kpto/internships/${row.internshipId}/start-insurance`);
+      await api.post(`/kpto/internships/${startModal.id}/start-insurance`, {
+        sgkRegistrationNo: sgkRegNo.trim() || null,
+      });
       setMsg({
         type: 'ok',
-        text: `${row.studentName} için "Sigorta Başlatıldı" işaretlendi. Öğrenci "Sigortası Başlatılanlar" listesine taşındı ve öğrenci panelinde yeşil onay yandı.`,
+        text: `${startModal.studentName} için "Sigorta Başlatıldı" işaretlendi.${
+          sgkRegNo.trim() ? ` (SGK Tescil No: ${sgkRegNo.trim()})` : ''
+        } Öğrenci "Sigortası Başlatılanlar" listesine taşındı ve öğrenci panelinde yeşil onay yandı.`,
+      });
+      setStartModal(null);
+      setSgkRegNo('');
+      await loadData();
+    } catch (err) {
+      setMsg({ type: 'err', text: getErrorMessage(err) });
+    }
+  };
+
+  const handleProcessModalSubmit = async () => {
+    if (!processModal) return;
+    setMsg(null);
+    try {
+      const endpoint =
+        processModal.mode === 'extension'
+          ? `/kpto/internships/${processModal.id}/process-extension`
+          : `/kpto/internships/${processModal.id}/process-exit`;
+      await api.post(endpoint, {
+        referenceNo: refNo.trim() || null,
+        note: processNote.trim() || null,
+      });
+      setMsg({
+        type: 'ok',
+        text:
+          processModal.mode === 'extension'
+            ? `${processModal.studentName} için izin kaynaklı Ek Prim / Uzatma SGK tescili işlendi.`
+            : `${processModal.studentName} için SGK işten çıkış bildirimi kaydedildi.`,
+      });
+      setProcessModal(null);
+      setRefNo('');
+      setProcessNote('');
+      await loadData();
+    } catch (err) {
+      setMsg({ type: 'err', text: getErrorMessage(err) });
+    }
+  };
+
+  const handleVerifyReceipt = async (documentId: string, studentName: string) => {
+    setMsg(null);
+    try {
+      await api.post(`/kpto/salary-receipts/${documentId}/verify`, {});
+      setMsg({
+        type: 'ok',
+        text: `${studentName} adlı öğrencinin maaş dekontu KPTO tarafından doğrulandı.`,
       });
       await loadData();
     } catch (err) {
@@ -99,6 +182,14 @@ export const KptoPanel: React.FC = () => {
     downloadBlob(`/kpto/export${query}`, `KPTO_Liste_${status ?? 'Tumu'}.xlsx`);
   };
 
+  const exportArchiveExcel = () => {
+    const query = archiveYear ? `?year=${archiveYear}` : '';
+    downloadBlob(`/kpto/archive/export${query}`, `KPTO_SGK_Arsivi_${archiveYear || 'Tumu'}.xlsx`);
+  };
+
+  const isStatusTab =
+    tab === 'Pending' || tab === 'InsuranceActive' || tab === 'InsuranceNotStarted';
+
   return (
     <div className="space-y-6">
       {/* Başlık ve Toplu Excel Dökümü */}
@@ -111,19 +202,28 @@ export const KptoPanel: React.FC = () => {
             <div>
               <h2 className="text-xl font-bold text-slate-900">KPTO Paneli (Sigorta ve SGK Giriş Birimi)</h2>
               <p className="text-sm text-slate-500">
-                Komisyonun onayladığı öğrencilerin SPAS / Excel dökümünü alın, SGK girişini yapıp sigortalarını başlatın.
+                SGK giriş, izin kaynaklı ek prim tescili, işten çıkış bildirimi, maaş dekontu doğrulama ve arşiv işlemleri.
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            {tab !== 'Receipts' && (
+            {isStatusTab && (
               <button
                 onClick={() => exportExcel(tab)}
                 className="flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-800"
               >
                 <FileSpreadsheet className="h-4 w-4" />
                 Bu Listeyi Excel / SPAS Dökümü İndir (.xlsx)
+              </button>
+            )}
+            {tab === 'Archive' && (
+              <button
+                onClick={exportArchiveExcel}
+                className="flex items-center gap-2 rounded-xl bg-indigo-700 px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-indigo-800"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                SGK Arşivini Excel İndir (.xlsx)
               </button>
             )}
             <button
@@ -136,11 +236,11 @@ export const KptoPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* 4 Sekme: Gelenler, Sigortası Başlatılanlar, Başlatılmayanlar, Maaş Dekontları */}
+        {/* 7 Sekme: Gelenler, Başlatılanlar, Başlatılmayanlar, Ek Prim Tescilleri, SGK Çıkış Masası, Maaş Dekontları, Arşiv */}
         <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
           <button
             onClick={() => setTab('Pending')}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
+            className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
               tab === 'Pending'
                 ? 'bg-amber-600 text-white shadow-xs'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -150,7 +250,7 @@ export const KptoPanel: React.FC = () => {
           </button>
           <button
             onClick={() => setTab('InsuranceActive')}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
+            className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
               tab === 'InsuranceActive'
                 ? 'bg-emerald-600 text-white shadow-xs'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -160,7 +260,7 @@ export const KptoPanel: React.FC = () => {
           </button>
           <button
             onClick={() => setTab('InsuranceNotStarted')}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
+            className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
               tab === 'InsuranceNotStarted'
                 ? 'bg-rose-600 text-white shadow-xs'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -169,17 +269,71 @@ export const KptoPanel: React.FC = () => {
             3. Sigortası Başlatılmayanlar
           </button>
           <button
+            onClick={() => setTab('Extensions')}
+            className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
+              tab === 'Extensions'
+                ? 'bg-orange-600 text-white shadow-xs'
+                : 'bg-orange-50 text-orange-800 border border-orange-200 hover:bg-orange-100'
+            }`}
+          >
+            <PlusCircle className="h-4 w-4" />
+            4. Ek Prim Tescilleri
+          </button>
+          <button
+            onClick={() => setTab('Exits')}
+            className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
+              tab === 'Exits'
+                ? 'bg-purple-700 text-white shadow-xs'
+                : 'bg-purple-50 text-purple-900 border border-purple-200 hover:bg-purple-100'
+            }`}
+          >
+            <FileOutput className="h-4 w-4" />
+            5. SGK Çıkış Masası
+          </button>
+          <button
             onClick={() => setTab('Receipts')}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
+            className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
               tab === 'Receipts'
                 ? 'bg-indigo-600 text-white shadow-xs'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
             <Receipt className="h-4 w-4" />
-            Maaş Dekontları
+            6. Maaş Dekontları
+          </button>
+          <button
+            onClick={() => setTab('Archive')}
+            className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
+              tab === 'Archive'
+                ? 'bg-slate-800 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <Archive className="h-4 w-4" />
+            7. SGK Arşivi
           </button>
         </div>
+
+        {tab === 'Archive' && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs">
+            <div className="flex items-center gap-2 font-semibold text-slate-700">
+              <Archive className="h-4 w-4 text-slate-600" />
+              <span>Tarihsel SGK Arşivi (Salt Okunur) — Yıla Göre Filtrele:</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={archiveYear}
+                onChange={(e) => setArchiveYear(e.target.value)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800"
+              >
+                <option value="">Tüm Arşiv Yılları</option>
+                <option value="2027">2027 Dönemi</option>
+                <option value="2026">2026 Dönemi</option>
+                <option value="2025">2025 Dönemi</option>
+              </select>
+            </div>
+          </div>
+        )}
       </div>
 
       {msg && (
@@ -210,6 +364,7 @@ export const KptoPanel: React.FC = () => {
                     <th className="px-4 py-3">Firma</th>
                     <th className="px-4 py-3">Dosya</th>
                     <th className="px-4 py-3">Yüklenme Tarihi</th>
+                    <th className="px-4 py-3">Doğrulama Durumu</th>
                     <th className="px-4 py-3 text-right">İşlem</th>
                   </tr>
                 </thead>
@@ -222,14 +377,37 @@ export const KptoPanel: React.FC = () => {
                       <td className="px-4 py-3 text-slate-700">{r.companyName}</td>
                       <td className="px-4 py-3 text-slate-600">{r.fileName}</td>
                       <td className="px-4 py-3 text-xs text-slate-500">{formatDate(r.uploadedAt)}</td>
+                      <td className="px-4 py-3">
+                        {r.isVerifiedByKpto ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            KPTO Doğruladı ({formatDate(r.verifiedByKptoAt)})
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800">
+                            İnceleme Bekliyor
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => downloadBlob(`/documents/${r.documentId}`, r.fileName)}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          Dekontu İndir
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => downloadBlob(`/documents/${r.documentId}`, r.fileName)}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Dekontu İndir
+                          </button>
+                          {!r.isVerifiedByKpto && (
+                            <button
+                              onClick={() => handleVerifyReceipt(r.documentId, r.studentName)}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              Dekontu Doğrula
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -251,9 +429,9 @@ export const KptoPanel: React.FC = () => {
                   <tr>
                     <th className="px-4 py-3">Öğrenci / T.C. Kimlik</th>
                     <th className="px-4 py-3">Firma / Tür</th>
-                    <th className="px-4 py-3">Staj Tarihleri</th>
+                    <th className="px-4 py-3">Staj Tarihleri & SGK Tescili</th>
                     <th className="px-4 py-3">SPAS & Maaş</th>
-                    <th className="px-4 py-3 text-right">Sigorta İşlemi</th>
+                    <th className="px-4 py-3 text-right">Sigorta / SGK İşlemi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -276,11 +454,36 @@ export const KptoPanel: React.FC = () => {
                         <p className="font-medium text-slate-800">
                           {formatDate(r.startDate)} — {formatDate(r.endDate)}
                         </p>
-                        {r.dateChanged && (
-                          <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">
-                            <AlertTriangle className="h-3.5 w-3.5" />
-                            İzin Nedeniyle Bitiş Tarihi Güncellendi!
-                          </span>
+                        {r.originalEndDate && r.originalEndDate !== r.endDate && (
+                          <p className="text-[11px] text-slate-500">
+                            İlk Bitiş: {formatDate(r.originalEndDate)}
+                          </p>
+                        )}
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {r.sgkRegistrationNo && (
+                            <span className="inline-flex items-center rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
+                              SGK Tescil No: {r.sgkRegistrationNo}
+                            </span>
+                          )}
+                          {r.dateChanged && (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
+                              <AlertTriangle className="h-3 w-3" />
+                              İzin Nedeniyle Bitiş Tarihi Güncellendi
+                            </span>
+                          )}
+                          {r.extensionSgkProcessed && (
+                            <span className="inline-flex items-center rounded-md bg-teal-100 px-2 py-0.5 text-[11px] font-bold text-teal-800">
+                              Ek Prim İşlendi ({formatDate(r.extensionSgkProcessedAt)})
+                            </span>
+                          )}
+                          {r.sgkExitProcessed && (
+                            <span className="inline-flex items-center rounded-md bg-purple-100 px-2 py-0.5 text-[11px] font-bold text-purple-800">
+                              SGK Çıkış İşlendi{r.sgkExitNo ? ` (${r.sgkExitNo})` : ''}
+                            </span>
+                          )}
+                        </div>
+                        {r.extensionSgkNote && (
+                          <p className="mt-1 text-xs font-medium text-teal-700">Ek Prim Notu: {r.extensionSgkNote}</p>
                         )}
                         {r.kptoNote && (
                           <p className="mt-1 text-xs font-medium text-rose-600">Not: {r.kptoNote}</p>
@@ -310,7 +513,10 @@ export const KptoPanel: React.FC = () => {
                         {tab === 'Pending' && (
                           <div className="flex justify-end gap-2">
                             <button
-                              onClick={() => handleStartInsurance(r)}
+                              onClick={() => {
+                                setStartModal({ id: r.internshipId, studentName: r.studentName });
+                                setSgkRegNo(r.sgkRegistrationNo || '');
+                              }}
                               className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700"
                             >
                               <CheckCircle2 className="h-4 w-4" />
@@ -328,9 +534,16 @@ export const KptoPanel: React.FC = () => {
                           </div>
                         )}
                         {tab === 'InsuranceActive' && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
-                            ✔ SGK Aktif ({formatDate(r.insuranceStartedAt)})
-                          </span>
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
+                              ✔ SGK Aktif ({formatDate(r.insuranceStartedAt)})
+                            </span>
+                            {r.sgkRegistrationNo && (
+                              <span className="text-[11px] font-semibold text-slate-600">
+                                Tescil: {r.sgkRegistrationNo}
+                              </span>
+                            )}
+                          </div>
                         )}
                         {tab === 'InsuranceNotStarted' && (
                           <button
@@ -340,6 +553,62 @@ export const KptoPanel: React.FC = () => {
                             Tekrar Gelenler'e Al
                           </button>
                         )}
+                        {tab === 'Extensions' && (
+                          r.extensionSgkProcessed ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-3 py-1 text-xs font-bold text-teal-800">
+                              ✔ Ek Prim Tescili Tamam
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setProcessModal({
+                                  mode: 'extension',
+                                  id: r.internshipId,
+                                  studentName: r.studentName,
+                                });
+                                setRefNo('');
+                                setProcessNote('');
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white shadow-xs hover:bg-orange-700"
+                            >
+                              <PlusCircle className="h-4 w-4" />
+                              Ek Prim Tescilini İşle
+                            </button>
+                          )
+                        )}
+                        {tab === 'Exits' && (
+                          r.sgkExitProcessed ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-800">
+                              ✔ SGK Çıkışı İşlendi
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setProcessModal({
+                                  mode: 'exit',
+                                  id: r.internshipId,
+                                  studentName: r.studentName,
+                                });
+                                setRefNo('');
+                                setProcessNote('');
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-purple-700 px-3 py-2 text-xs font-bold text-white shadow-xs hover:bg-purple-800"
+                            >
+                              <FileOutput className="h-4 w-4" />
+                              SGK Çıkışını İşle
+                            </button>
+                          )
+                        )}
+                        {tab === 'Archive' && (
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
+                              {r.status ? statusLabels[r.status] : 'Arşiv'}
+                            </span>
+                            {r.archiveYear && (
+                              <span className="text-[11px] text-slate-500">{r.archiveYear} Dönemi</span>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -347,6 +616,95 @@ export const KptoPanel: React.FC = () => {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* SGK Sigorta Başlat & Tescil No Modalı */}
+      {startModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-base font-bold text-slate-900">
+              SGK Sigorta Girişini Onayla ({startModal.studentName})
+            </h3>
+            <p className="mt-1 text-xs text-slate-500">
+              İsteğe bağlı olarak e-SGK / SPAS işe giriş tescil numarasını kaydedebilirsiniz.
+            </p>
+            <input
+              type="text"
+              value={sgkRegNo}
+              onChange={(e) => setSgkRegNo(e.target.value)}
+              placeholder="SGK İşe Giriş Tescil / Referans No (Opsiyonel)"
+              className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setStartModal(null)}
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={handleStartInsuranceSubmit}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+              >
+                Sigortayı Başlat & Kaydet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ek Prim Tescili / SGK Çıkış İşleme Modalı */}
+      {processModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-base font-bold text-slate-900">
+              {processModal.mode === 'extension'
+                ? `Ek Prim / Süre Uzatma SGK Tescili (${processModal.studentName})`
+                : `SGK İşten Çıkış Bildirimi (${processModal.studentName})`}
+            </h3>
+            <p className="mt-1 text-xs text-slate-500">
+              {processModal.mode === 'extension'
+                ? 'İzin/rapor nedeniyle ötelenecek günler için SGK sisteminde yaptığınız ek prim tescil bilgisini giriniz.'
+                : 'Stajını tamamlayan veya Form 7 ile iptal edilen öğrenci için SGK çıkış referans numarasını giriniz.'}
+            </p>
+            <input
+              type="text"
+              value={refNo}
+              onChange={(e) => setRefNo(e.target.value)}
+              placeholder={
+                processModal.mode === 'extension'
+                  ? 'Ek Bildirge / Referans No (Opsiyonel)'
+                  : 'SGK Çıkış Belge / Referans No (Opsiyonel)'
+              }
+              className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+            <textarea
+              rows={2}
+              value={processNote}
+              onChange={(e) => setProcessNote(e.target.value)}
+              placeholder="KPTO İşlem Notu (Opsiyonel)"
+              className="mt-2.5 w-full rounded-lg border border-slate-300 p-2.5 text-sm"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setProcessModal(null)}
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={handleProcessModalSubmit}
+                className={`rounded-lg px-4 py-2 text-xs font-bold text-white ${
+                  processModal.mode === 'extension'
+                    ? 'bg-orange-600 hover:bg-orange-700'
+                    : 'bg-purple-700 hover:bg-purple-800'
+                }`}
+              >
+                Kaydet ve İşaretle
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

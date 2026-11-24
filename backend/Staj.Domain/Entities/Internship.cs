@@ -244,6 +244,51 @@ public class Internship
     public bool EndingSoonNotified { get; set; }
 
     /// <summary>
+    /// KPTO tarafından girilen SGK işe giriş tescil / bildirge numarası.
+    /// </summary>
+    public string? SgkRegistrationNo { get; set; }
+
+    /// <summary>
+    /// İzin/telafi sonrası oluşan ek günlerin KPTO tarafından SGK ek prim tesciline işlenip işlenmediği.
+    /// </summary>
+    public bool ExtensionSgkProcessed { get; set; }
+
+    /// <summary>
+    /// Ek prim / süre uzatma SGK tescilinin işlendiği tarih.
+    /// </summary>
+    public DateTime? ExtensionSgkProcessedAt { get; set; }
+
+    /// <summary>
+    /// Ek prim / süre uzatma tesciline ait KPTO notu.
+    /// </summary>
+    public string? ExtensionSgkNote { get; set; }
+
+    /// <summary>
+    /// İptal edilen sigortalı stajın KPTO SGK çıkış işleminin yapılıp yapılmadığı.
+    /// </summary>
+    public bool SgkExitProcessed { get; set; }
+
+    /// <summary>
+    /// SGK çıkış işleminin yapıldığı tarih.
+    /// </summary>
+    public DateTime? SgkExitProcessedAt { get; set; }
+
+    /// <summary>
+    /// KPTO tarafından girilen SGK çıkış bildirge numarası.
+    /// </summary>
+    public string? SgkExitNo { get; set; }
+
+    /// <summary>
+    /// Rapor son teslim tarihi hatırlatmasının gönderilip gönderilmediği.
+    /// </summary>
+    public bool ReportDeadlineNotified { get; set; }
+
+    /// <summary>
+    /// Yaklaşan staj için KPTO sigorta hatırlatmasının gönderilip gönderilmediği.
+    /// </summary>
+    public bool InsuranceReminderNotified { get; set; }
+
+    /// <summary>
     /// Kaydın arşive taşınıp taşınmadığı.
     /// </summary>
     public bool IsArchived { get; set; }

@@ -290,7 +290,7 @@ public class QuestPdfService : IPdfService
                     FormRow3Col(t, "Adı", $":   {i.Company?.Name ?? "-"}");
                     FormRow3Col(t, "Yetkilisi", $":   {i.AdvisorName}");
                     FormRow3Col(t, "Adresi", $":   {(string.IsNullOrWhiteSpace(companyAddress) ? "-" : companyAddress)}");
-                    FormRow3Col(t, "Web Adresi", ":   -");
+                    FormRow3Col(t, "Web Adresi", $":   {(string.IsNullOrWhiteSpace(i.Company?.WebSite) ? "-" : i.Company!.WebSite)}");
                     FormRow3Col(t, "Tel Numarası / e-posta", $":   {(string.IsNullOrWhiteSpace(companyContact) ? "-" : companyContact)}");
                     FormRow3Col(t, "İş Yeri Faaliyet Alanları", $":   {i.Company?.Sector ?? "-"}");
 

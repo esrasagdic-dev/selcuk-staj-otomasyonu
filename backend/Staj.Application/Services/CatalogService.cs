@@ -50,6 +50,29 @@ public class CatalogService
         var term = new Term();
         Apply(term, req);
         _db.Terms.Add(term);
+
+        if (req.PublishAnnouncement)
+        {
+            var appStart = term.ApplicationStartDate.HasValue
+                ? $"{term.ApplicationStartDate.Value:dd.MM.yyyy} – "
+                : "";
+            var satText = term.IsSaturdayAllowed ? "Cumartesi çalışması serbest" : "Cumartesi çalışması hariç";
+            _db.Announcements.Add(new Announcement
+            {
+                Title = $"📅 Staj Dönemi Açıldı: {term.Name}",
+                Content = $"{term.InternshipType.ToTurkish()} ({term.AcademicYear}) başvuruları tanımlandı. " +
+                          $"Başvuru Tarihleri: {appStart}{term.ApplicationDeadline:dd.MM.yyyy} | " +
+                          $"Staj Aralığı: {term.EarliestStartDate:dd.MM.yyyy} – {term.LatestEndDate:dd.MM.yyyy} | " +
+                          $"Rapor Son Teslim: {term.ReportDeadline:dd.MM.yyyy} ({term.MinWorkDays}-{term.MaxWorkDays} İş Günü, {satText}).",
+                Category = "Calendar",
+                IsPinned = true,
+                IsActive = true,
+                CreatedById = _currentUser.UserId
+            });
+            _notify.ToRole(UserRole.Student, $"Yeni Staj Dönemi: {term.Name}",
+                $"Son Başvuru: {term.ApplicationDeadline:dd.MM.yyyy} | Staj: {term.EarliestStartDate:dd.MM.yyyy} – {term.LatestEndDate:dd.MM.yyyy}");
+        }
+
         _notify.Audit("Term.Create", nameof(Term), term.Id, term.Name);
         await _db.SaveChangesAsync(ct);
         return (await GetTermsAsync(false, ct)).First(t => t.Id == term.Id);
@@ -172,6 +195,8 @@ public class CatalogService
         var company = new Company
         {
             Name = name, Sector = req.Sector, City = req.City, Address = req.Address, Phone = req.Phone, Email = req.Email,
+            WebSite = string.IsNullOrWhiteSpace(req.WebSite) ? null : req.WebSite.Trim(),
+            TaxNumber = string.IsNullOrWhiteSpace(req.TaxNumber) ? null : req.TaxNumber.Trim(),
             IsVerified = _currentUser.Role is UserRole.CommitteeMember or UserRole.DepartmentHead
         };
         _db.Companies.Add(company);
@@ -195,6 +220,8 @@ public class CatalogService
     {
         var c = await _db.Companies.FindAsync(new object[] { id }, ct) ?? throw AppException.NotFound("Firma");
         c.Name = req.Name.Trim(); c.Sector = req.Sector; c.City = req.City; c.Address = req.Address; c.Phone = req.Phone; c.Email = req.Email;
+        c.WebSite = string.IsNullOrWhiteSpace(req.WebSite) ? null : req.WebSite.Trim();
+        c.TaxNumber = string.IsNullOrWhiteSpace(req.TaxNumber) ? null : req.TaxNumber.Trim();
         c.IsVerified = verified;
         await _db.SaveChangesAsync(ct);
         return c.ToDto();
@@ -349,6 +376,7 @@ public class CatalogService
             var c = await _db.Companies.FindAsync(new object[] { r.CompanyId.Value }, ct) ?? throw AppException.NotFound("Firma");
             l.CompanyName = c.Name;
             l.City ??= c.City;
+            l.Sector ??= c.Sector;
         }
         if (string.IsNullOrWhiteSpace(l.CompanyName)) throw AppException.BadRequest("Firma adı zorunludur.");
         l.Title = r.Title.Trim();
@@ -356,6 +384,9 @@ public class CatalogService
         l.Contact = r.Contact;
         l.City = r.City ?? l.City;
         l.Deadline = r.Deadline;
+        l.Quota = r.Quota;
+        l.Sector = string.IsNullOrWhiteSpace(r.Sector) ? l.Sector : r.Sector.Trim();
+        l.Department = string.IsNullOrWhiteSpace(r.Department) ? null : r.Department.Trim();
         l.IsActive = r.IsActive;
     }
 }

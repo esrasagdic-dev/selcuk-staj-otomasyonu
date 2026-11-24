@@ -56,6 +56,7 @@ import {
 } from '../api';
 import { DocumentPreviewModal, type PreviewSource } from './DocumentPreviewModal';
 import { AuthImage } from './AuthImage';
+import { EmailHistoryModal } from './EmailHistoryModal';
 
 interface Props {
   user: UserDto;
@@ -113,6 +114,10 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
     initialIndex?: number;
   } | null>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailHistoryScope, setEmailHistoryScope] = useState<{
+    internshipId?: string | null;
+    title?: string;
+  } | null>(null);
 
   // Diğer sekmelerin verileri
   const [leaves, setLeaves] = useState<LeaveRequestDto[]>([]);
@@ -141,6 +146,7 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
     maxWorkDays: 30,
     isSaturdayAllowed: true,
     isActive: true,
+    publishAnnouncement: false,
   });
 
   // Yeni Tatil Formu
@@ -160,6 +166,9 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
     city: 'Konya',
     deadline: '2026-06-15',
     isActive: true,
+    quota: '',
+    sector: '',
+    department: '',
   });
 
   // Yeni Personel Formu (Bölüm Başkanı)
@@ -906,7 +915,18 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
     e.preventDefault();
     setMsg(null);
     try {
-      await api.post('/listings', newListing);
+      await api.post('/listings', {
+        companyName: newListing.companyName,
+        title: newListing.title,
+        description: newListing.description,
+        contact: newListing.contact || null,
+        city: newListing.city || null,
+        deadline: newListing.deadline || null,
+        isActive: newListing.isActive,
+        quota: newListing.quota ? Number(newListing.quota) : null,
+        sector: newListing.sector.trim() || null,
+        department: newListing.department.trim() || null,
+      });
       setNewListing({
         companyName: '',
         title: '',
@@ -915,6 +935,9 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
         city: 'Konya',
         deadline: '2026-06-15',
         isActive: true,
+        quota: '',
+        sector: '',
+        department: '',
       });
       setMsg({ type: 'ok', text: 'Yeni firma staj ilanı yayınlandı ve öğrencilere bildirildi.' });
       await loadOtherTabs();
@@ -1265,6 +1288,19 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
             Personel & Yetki Yönetimi (Bölüm Başkanı)
           </button>
         )}
+        <button
+          type="button"
+          onClick={() =>
+            setEmailHistoryScope({
+              internshipId: null,
+              title: 'Tüm Sistem HTML E-Posta Gönderim Geçmişi',
+            })
+          }
+          className="ml-auto flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-900 hover:bg-indigo-100"
+        >
+          <Mail className="h-4 w-4 text-indigo-700" />
+          HTML E-Posta Geçmişi
+        </button>
       </div>
 
       {msg && (
@@ -1436,7 +1472,11 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                         {formatDate(selected.startDate)} – {formatDate(selected.endDate)} ({selected.workDays} İş Günü • Cumartesi: {selected.worksOnSaturday ? 'Çalışıyor' : 'Çalışmıyor'})
                       </b>
                     </p>
-                    {(selected.subject || selected.advisorGraduatedDepartment || (selected.academicResult && selected.academicResult !== 'None')) && (
+                    {(selected.subject ||
+                      selected.advisorGraduatedDepartment ||
+                      selected.sgkRegistrationNo ||
+                      selected.sgkExitNo ||
+                      (selected.academicResult && selected.academicResult !== 'None')) && (
                       <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-600">
                         {selected.subject && (
                           <span>
@@ -1446,6 +1486,16 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                         {selected.advisorGraduatedDepartment && (
                           <span>
                             • Mezuniyet: <b className="text-slate-900">{selected.advisorGraduatedDepartment}</b>
+                          </span>
+                        )}
+                        {selected.sgkRegistrationNo && (
+                          <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                            SGK Tescil No: {selected.sgkRegistrationNo}
+                          </span>
+                        )}
+                        {selected.sgkExitNo && (
+                          <span className="rounded-full border border-purple-300 bg-purple-50 px-2.5 py-0.5 text-[11px] font-bold text-purple-800">
+                            SGK Çıkış No: {selected.sgkExitNo}
                           </span>
                         )}
                         {selected.academicResult && selected.academicResult !== 'None' && (
@@ -1606,6 +1656,19 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                           Gönderilen E-Postayı & Şifreyi Görüntüle
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEmailHistoryScope({
+                            internshipId: selected.id,
+                            title: `${selected.studentName} — HTML E-Posta Logları`,
+                          })
+                        }
+                        className="flex items-center gap-1 rounded-lg border border-indigo-300 bg-white px-2.5 py-1 text-[11px] font-bold text-indigo-800 hover:bg-indigo-100"
+                      >
+                        <Mail className="h-3 w-3" />
+                        Bu Stajın E-Posta Logları
+                      </button>
                       <button
                         type="button"
                         onClick={handleResendAdvisorEmail}
@@ -2594,6 +2657,15 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                   />
                   Bu dönemde Cumartesi çalışmasına izin ver (Cumartesi iş günü seçilebilir)
                 </label>
+                <label className="col-span-2 flex cursor-pointer items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 font-semibold text-blue-900">
+                  <input
+                    type="checkbox"
+                    checked={newTerm.publishAnnouncement}
+                    onChange={(e) => setNewTerm({ ...newTerm, publishAnnouncement: e.target.checked })}
+                    className="h-4 w-4 rounded text-blue-600"
+                  />
+                  Bu dönemi oluştururken öğrencilere otomatik Takvim Duyurusu yayınla
+                </label>
               </div>
               <button
                 type="submit"
@@ -2847,6 +2919,7 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                         ...newListing,
                         companyName: found.name,
                         city: found.city || newListing.city,
+                        sector: found.sector || newListing.sector,
                       });
                     }
                   }}
@@ -2899,6 +2972,34 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                   onChange={(e) => setNewListing({ ...newListing, contact: e.target.value })}
                   className="rounded-lg border border-slate-300 px-3 py-2"
                 />
+                <input
+                  type="text"
+                  placeholder="Sektör (Örn: Savunma / Yazılım)"
+                  value={newListing.sector}
+                  onChange={(e) => setNewListing({ ...newListing, sector: e.target.value })}
+                  className="rounded-lg border border-slate-300 px-3 py-2"
+                />
+                <input
+                  type="text"
+                  placeholder="Hedef Bölüm / Alan"
+                  value={newListing.department}
+                  onChange={(e) => setNewListing({ ...newListing, department: e.target.value })}
+                  className="rounded-lg border border-slate-300 px-3 py-2"
+                />
+                <input
+                  type="number"
+                  min={1}
+                  placeholder="Kontenjan (Örn: 5)"
+                  value={newListing.quota}
+                  onChange={(e) => setNewListing({ ...newListing, quota: e.target.value })}
+                  className="rounded-lg border border-slate-300 px-3 py-2"
+                />
+                <input
+                  type="date"
+                  value={newListing.deadline}
+                  onChange={(e) => setNewListing({ ...newListing, deadline: e.target.value })}
+                  className="rounded-lg border border-slate-300 px-3 py-2"
+                />
               </div>
               <button
                 type="submit"
@@ -2914,7 +3015,12 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                 <div key={l.id} className="flex items-center justify-between border-b border-slate-100 py-2 text-xs">
                   <div>
                     <p className="font-bold text-slate-800">{l.title}</p>
-                    <p className="text-slate-500">{l.companyName}</p>
+                    <p className="text-slate-500">
+                      {l.companyName}
+                      {l.sector ? ` • ${l.sector}` : ''}
+                      {l.department ? ` • ${l.department}` : ''}
+                      {l.quota != null ? ` • Kontenjan: ${l.quota}` : ''}
+                    </p>
                   </div>
                   <button
                     onClick={async () => {
@@ -3127,6 +3233,14 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
           sources={previewModal.sources}
           initialIndex={previewModal.initialIndex}
           onClose={() => setPreviewModal(null)}
+        />
+      )}
+
+      {emailHistoryScope && (
+        <EmailHistoryModal
+          internshipId={emailHistoryScope.internshipId}
+          title={emailHistoryScope.title}
+          onClose={() => setEmailHistoryScope(null)}
         />
       )}
     </div>

@@ -15,11 +15,13 @@ public static class Mapping
         u.HasAcceptedGuide, u.MustChangePassword, u.IsActive);
 
     /// <summary>Firmayı DTO'ya çevirir.</summary>
-    public static CompanyDto ToDto(this Company c) => new(c.Id, c.Name, c.Sector, c.City, c.Address, c.Phone, c.Email, c.IsVerified);
+    public static CompanyDto ToDto(this Company c) =>
+        new(c.Id, c.Name, c.Sector, c.City, c.Address, c.Phone, c.Email, c.IsVerified, c.WebSite, c.TaxNumber);
 
     /// <summary>İlanı DTO'ya çevirir.</summary>
     public static ListingDto ToDto(this CompanyListing l) =>
-        new(l.Id, l.CompanyId, l.CompanyName, l.Title, l.Description, l.Contact, l.City, l.Deadline, l.IsActive, l.CreatedAt);
+        new(l.Id, l.CompanyId, l.CompanyName, l.Title, l.Description, l.Contact, l.City, l.Deadline, l.IsActive, l.CreatedAt,
+            l.Quota, l.Sector, l.Department);
 
     /// <summary>Duyuruyu DTO'ya çevirir.</summary>
     public static AnnouncementDto ToDto(this Announcement a) =>
@@ -42,6 +44,10 @@ public static class Mapping
 
     /// <summary>Bildirimi DTO'ya çevirir.</summary>
     public static NotificationDto ToDto(this Notification n) => new(n.Id, n.Type, n.Title, n.Message, n.IsRead, n.CreatedAt, n.InternshipId);
+
+    /// <summary>E-posta logunu DTO'ya çevirir.</summary>
+    public static EmailLogDto ToDto(this EmailLog e) =>
+        new(e.Id, e.InternshipId, e.ToEmail, e.Subject, e.HtmlBody, e.IsSuccess, e.ErrorMessage, e.SentAt);
 
     /// <summary>İzin talebini DTO'ya çevirir (Internship.Student ve Internship.Company yüklü olmalıdır).</summary>
     public static LeaveRequestDto ToDto(this LeaveRequest r) => new(
@@ -98,7 +104,11 @@ public static class Mapping
         i.AdvisorApprovedIpAddress,
         i.IsLogbookLocked,
         i.LogbookLockReason,
-        i.CoverPageDataJson);
+        i.CoverPageDataJson,
+        i.SgkRegistrationNo,
+        i.ExtensionSgkProcessed,
+        i.SgkExitProcessed,
+        i.SgkExitNo);
 
     /// <summary>Durumu Türkçe metne çevirir (e-posta ve bildirim metinleri için).</summary>
     public static string ToTurkish(this InternshipStatus s) => s switch

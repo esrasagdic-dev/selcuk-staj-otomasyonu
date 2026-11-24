@@ -97,7 +97,7 @@ public class AdvisorService
         await _db.SaveChangesAsync(ct);
 
         await _notify.TryEmailAsync(i.Student.Email, "Staj Defteriniz İçin Revize İstendi",
-            $"<p>Sayın {i.Student.FullName},</p><p>Staj danışmanınız <b>{i.AdvisorName}</b> sanal staj defterinizi incelemiş ve aşağıdaki gerekçeyle revize (düzeltme) talep etmiştir:</p><blockquote>{System.Net.WebUtility.HtmlEncode(note.Trim())}</blockquote><p>Lütfen sanal staj defterinizi düzenleyip tekrar onaya gönderiniz.</p>", ct);
+            $"<p>Sayın {i.Student.FullName},</p><p>Staj danışmanınız <b>{i.AdvisorName}</b> sanal staj defterinizi incelemiş ve aşağıdaki gerekçeyle revize (düzeltme) talep etmiştir:</p><blockquote>{System.Net.WebUtility.HtmlEncode(note.Trim())}</blockquote><p>Lütfen sanal staj defterinizi düzenleyip tekrar onaya gönderiniz.</p>", ct, i.Id);
 
         return await _internships.ToDetailAsync(i, ct);
     }

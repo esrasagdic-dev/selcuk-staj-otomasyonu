@@ -48,7 +48,8 @@ public record TermUpsertRequest(
     string Name, string AcademicYear, InternshipType InternshipType,
     DateOnly EarliestStartDate, DateOnly LatestEndDate, DateOnly ApplicationDeadline, DateOnly ReportDeadline,
     int MinWorkDays, int MaxWorkDays, bool IsActive,
-    DateOnly? ApplicationStartDate = null, bool IsSaturdayAllowed = true);
+    DateOnly? ApplicationStartDate = null, bool IsSaturdayAllowed = true,
+    bool PublishAnnouncement = false);
 
 /// <summary>Resmi tatil.</summary>
 public record HolidayDto(Guid Id, DateOnly Date, string Name);
@@ -61,19 +62,29 @@ public record HolidayCreateRequest(DateOnly Date, string Name);
 // ============================================================
 
 /// <summary>Firma.</summary>
-public record CompanyDto(Guid Id, string Name, string? Sector, string? City, string? Address, string? Phone, string? Email, bool IsVerified);
+public record CompanyDto(
+    Guid Id, string Name, string? Sector, string? City, string? Address, string? Phone, string? Email, bool IsVerified,
+    string? WebSite = null, string? TaxNumber = null);
 
 /// <summary>Yeni firma ekleme isteği.</summary>
-public record CompanyCreateRequest(string Name, string? Sector, string? City, string? Address, string? Phone, string? Email);
+public record CompanyCreateRequest(
+    string Name, string? Sector, string? City, string? Address, string? Phone, string? Email,
+    string? WebSite = null, string? TaxNumber = null);
 
 /// <summary>Firma istatistiği (Hangi firmada kaç öğrenci staj yaptı?).</summary>
 public record CompanyStatDto(Guid Id, string Name, string? City, string? Sector, bool IsVerified, int TotalInternships, int PassedCount, int ActiveCount);
 
 /// <summary>Stajyer arayan firma ilanı.</summary>
-public record ListingDto(Guid Id, Guid? CompanyId, string CompanyName, string Title, string Description, string? Contact, string? City, DateOnly? Deadline, bool IsActive, DateTime CreatedAt);
+public record ListingDto(
+    Guid Id, Guid? CompanyId, string CompanyName, string Title, string Description, string? Contact, string? City,
+    DateOnly? Deadline, bool IsActive, DateTime CreatedAt,
+    int? Quota = null, string? Sector = null, string? Department = null);
 
 /// <summary>İlan oluşturma / güncelleme isteği.</summary>
-public record ListingUpsertRequest(Guid? CompanyId, string CompanyName, string Title, string Description, string? Contact, string? City, DateOnly? Deadline, bool IsActive);
+public record ListingUpsertRequest(
+    Guid? CompanyId, string CompanyName, string Title, string Description, string? Contact, string? City,
+    DateOnly? Deadline, bool IsActive,
+    int? Quota = null, string? Sector = null, string? Department = null);
 
 /// <summary>Komisyon duyurusu.</summary>
 public record AnnouncementDto(Guid Id, string Title, string Content, string Category, bool IsPinned, bool IsActive, DateTime CreatedAt);
@@ -198,28 +209,50 @@ public record InternshipDetailDto(
     string? AdvisorApprovedIpAddress = null,
     bool IsLogbookLocked = false,
     string? LogbookLockReason = null,
-    string? CoverPageDataJson = null);
+    string? CoverPageDataJson = null,
+    string? SgkRegistrationNo = null,
+    bool ExtensionSgkProcessed = false,
+    bool SgkExitProcessed = false,
+    string? SgkExitNo = null);
 
 // ============================================================
 //  KPTO
 // ============================================================
+
+/// <summary>KPTO sigorta başlatma isteği (isteğe bağlı SGK tescil numarasıyla).</summary>
+public record StartInsuranceRequest(string? SgkRegistrationNo = null);
+
+/// <summary>KPTO ek prim tescili veya SGK çıkış işlemi isteği.</summary>
+public record KptoProcessRequest(string? ReferenceNo = null, string? Note = null);
 
 /// <summary>KPTO listesi / Excel dökümü satırı.</summary>
 public record KptoRowDto(
     Guid InternshipId, string StudentName, string? StudentNo, string? NationalId, string StudentEmail, string? StudentPhone,
     string CompanyName, string? CompanyAddress, InternshipType Type, DateOnly StartDate, DateOnly EndDate, int WorkDays,
     bool ReceivesSalary, KptoInsuranceStatus? KptoStatus, string? KptoNote, DateTime? ApprovedAt, DateTime? InsuranceStartedAt,
-    Guid? SpasDocumentId, int SalaryReceiptCount, bool DateChanged);
+    Guid? SpasDocumentId, int SalaryReceiptCount, bool DateChanged,
+    string? SgkRegistrationNo = null,
+    bool ExtensionSgkProcessed = false, DateTime? ExtensionSgkProcessedAt = null, string? ExtensionSgkNote = null,
+    bool SgkExitProcessed = false, DateTime? SgkExitProcessedAt = null, string? SgkExitNo = null,
+    InternshipStatus Status = InternshipStatus.ApprovedByCommittee,
+    bool IsArchived = false, string? ArchiveYear = null, DateOnly? OriginalEndDate = null);
 
 /// <summary>Maaş dekontu satırı (KPTO).</summary>
-public record SalaryReceiptDto(Guid DocumentId, Guid InternshipId, string StudentName, string? StudentNo, string CompanyName, string FileName, DateTime UploadedAt);
+public record SalaryReceiptDto(
+    Guid DocumentId, Guid InternshipId, string StudentName, string? StudentNo, string CompanyName, string FileName, DateTime UploadedAt,
+    bool IsVerifiedByKpto = false, DateTime? VerifiedByKptoAt = null);
 
 // ============================================================
-//  BİLDİRİM / İSTATİSTİK / DOĞRULAMA
+//  BİLDİRİM / E-POSTA GEÇMİŞİ / İSTATİSTİK / DOĞRULAMA
 // ============================================================
 
 /// <summary>Bildirim.</summary>
 public record NotificationDto(Guid Id, NotificationType Type, string Title, string Message, bool IsRead, DateTime CreatedAt, Guid? InternshipId);
+
+/// <summary>Sistem tarafından gönderilen e-postaların log kaydı.</summary>
+public record EmailLogDto(
+    Guid Id, Guid? InternshipId, string ToEmail, string Subject, string HtmlBody,
+    bool IsSuccess, string? ErrorMessage, DateTime SentAt);
 
 /// <summary>Komisyon gösterge paneli istatistikleri.</summary>
 public record CommitteeStatsDto(

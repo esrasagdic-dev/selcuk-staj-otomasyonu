@@ -35,6 +35,8 @@ public interface IAppDbContext
     DbSet<Notification> Notifications { get; }
     /// <summary>Denetim logları.</summary>
     DbSet<AuditLog> AuditLogs { get; }
+    /// <summary>E-posta gönderim logları.</summary>
+    DbSet<EmailLog> EmailLogs { get; }
 
     /// <summary>Değişiklikleri veritabanına kaydeder.</summary>
     Task<int> SaveChangesAsync(CancellationToken ct = default);

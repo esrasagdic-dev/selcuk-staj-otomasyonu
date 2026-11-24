@@ -42,11 +42,50 @@ public class NotificationService
             Action = action, EntityName = entityName, EntityId = entityId, Details = details
         });
 
-    /// <summary>E-posta gönderir; hata olursa iş akışını bozmamak için yutar.</summary>
-    public async Task TryEmailAsync(string to, string subject, string html, CancellationToken ct = default)
+    /// <summary>E-posta gönderir ve içeriğini HTML e-posta geçmişine (EmailLogs) kaydeder; gönderim hatasında ana akışı bozmaz.</summary>
+    public async Task TryEmailAsync(string to, string subject, string html, CancellationToken ct = default, Guid? internshipId = null)
     {
-        try { await _email.SendAsync(to, subject, html, ct); }
-        catch { /* E-posta sunucusu kapalıysa ana işlem iptal edilmez. Loglama Infrastructure'da yapılır. */ }
+        var ok = true;
+        string? error = null;
+        try
+        {
+            await _email.SendAsync(to, subject, html, ct);
+        }
+        catch (Exception ex)
+        {
+            ok = false;
+            error = ex.Message;
+        }
+
+        _db.EmailLogs.Add(new EmailLog
+        {
+            InternshipId = internshipId,
+            ToEmail = to,
+            Subject = subject,
+            HtmlBody = html,
+            IsSuccess = ok,
+            ErrorMessage = error,
+            SentAt = DateTime.UtcNow
+        });
+
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            // E-posta loglama hatası ana akışı bozmasın
+        }
+    }
+
+    /// <summary>Gönderilen HTML e-posta geçmişini (isteğe bağlı staj kimliğine göre filtrelenmiş) döner.</summary>
+    public async Task<List<EmailLogDto>> GetEmailLogsAsync(Guid? internshipId = null, CancellationToken ct = default)
+    {
+        var q = _db.EmailLogs.AsQueryable();
+        if (internshipId.HasValue)
+            q = q.Where(x => x.InternshipId == internshipId.Value);
+        var list = await q.OrderByDescending(x => x.SentAt).Take(100).ToListAsync(ct);
+        return list.Select(x => x.ToDto()).ToList();
     }
 
     /// <summary>Oturumdaki kullanıcının (kişisel + rol) bildirimlerini döner.</summary>

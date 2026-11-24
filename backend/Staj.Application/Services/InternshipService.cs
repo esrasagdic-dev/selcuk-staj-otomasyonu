@@ -917,7 +917,7 @@ public class InternshipService
             Yetkili E-Posta: <b>{i.AdvisorEmail}</b></p>
             <p>Saygılarımızla,<br/>T.C. Selçuk Üniversitesi Teknoloji Fakültesi Staj Komisyonu</p>
             """;
-        await _notify.TryEmailAsync(i.AdvisorEmail, $"Staj Defteri Onayınıza Sunuldu - {i.Student.FullName}", html, ct);
+        await _notify.TryEmailAsync(i.AdvisorEmail, $"Staj Defteri Onayınıza Sunuldu - {i.Student.FullName}", html, ct, i.Id);
         _notify.Audit("Internship.SubmitLogbookToAdvisor", nameof(Internship), i.Id, $"Sent to {i.AdvisorEmail}");
 
         await _db.SaveChangesAsync(ct);
@@ -971,7 +971,7 @@ public class InternshipService
             Kullanıcı E-Posta: <b>{i.AdvisorEmail}</b><br/>
             Geçici Şifreniz: <b>{tempPassword}</b></p>
             """;
-        await _notify.TryEmailAsync(i.AdvisorEmail, $"Şirket Danışmanı Bilgilendirme - {i.Student.FullName}", html, ct);
+        await _notify.TryEmailAsync(i.AdvisorEmail, $"Şirket Danışmanı Bilgilendirme - {i.Student.FullName}", html, ct, i.Id);
 
         i.AdvisorEmailSentAt = DateTime.UtcNow;
         i.AdvisorEmailStatus = $"Şirket danışmanı hesabı oluşturuldu ve geçici şifre ({tempPassword}) {i.AdvisorEmail} adresine e-posta ile gönderildi ({DateTime.Now:dd.MM.yyyy HH:mm}).";

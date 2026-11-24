@@ -40,6 +40,8 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<Notification> Notifications => Set<Notification>();
     /// <inheritdoc />
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    /// <inheritdoc />
+    public DbSet<EmailLog> EmailLogs => Set<EmailLog>();
 
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder b)
@@ -102,6 +104,12 @@ public class AppDbContext : DbContext, IAppDbContext
         {
             e.HasIndex(n => new { n.UserId, n.IsRead });
             e.HasIndex(n => new { n.TargetRole, n.IsRead });
+        });
+
+        b.Entity<EmailLog>(e =>
+        {
+            e.HasIndex(x => x.InternshipId);
+            e.HasIndex(x => x.SentAt);
         });
     }
 }

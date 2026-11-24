@@ -42,6 +42,16 @@ public class Company
     public string? Email { get; set; }
 
     /// <summary>
+    /// Firma resmi web sitesi adresi.
+    /// </summary>
+    public string? WebSite { get; set; }
+
+    /// <summary>
+    /// Firma vergi numarası.
+    /// </summary>
+    public string? TaxNumber { get; set; }
+
+    /// <summary>
     /// Firmanın kaydı oluşturan kullanıcı tarafından eklenip eklenmediği / komisyonca doğrulanıp doğrulanmadığı.
     /// </summary>
     public bool IsVerified { get; set; }

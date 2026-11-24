@@ -20,7 +20,8 @@ public class ClosedXmlExcelService : IExcelService
         {
             "Sıra", "Öğrenci No", "Ad Soyad", "T.C. Kimlik No", "Telefon", "E-Posta",
             "Staj Türü", "Firma Adı", "Firma Adresi", "Başlama Tarihi", "Bitiş Tarihi",
-            "İş Günü", "Maaş Alıyor mu?", "Sigorta Durumu", "Tarih Değişti mi (İzin)?", "KPTO Notu"
+            "İş Günü", "Maaş Alıyor mu?", "Sigorta Durumu", "SGK Tescil No",
+            "Tarih Değişti mi (İzin)?", "Ek Prim Tescili", "SGK Çıkış", "KPTO Notu"
         };
 
         for (var c = 0; c < headers.Length; c++)
@@ -55,8 +56,15 @@ public class ClosedXmlExcelService : IExcelService
                 KptoInsuranceStatus.InsuranceNotStarted => "Sigortası Başlatılmadı",
                 _ => "-"
             };
-            ws.Cell(r, 15).Value = row.DateChanged ? "EVET (Güncellendi)" : "Hayır";
-            ws.Cell(r, 16).Value = row.KptoNote ?? "";
+            ws.Cell(r, 15).Value = row.SgkRegistrationNo ?? "-";
+            ws.Cell(r, 16).Value = row.DateChanged ? "EVET (Güncellendi)" : "Hayır";
+            ws.Cell(r, 17).Value = row.DateChanged
+                ? (row.ExtensionSgkProcessed ? $"Tamamlandı ({row.ExtensionSgkNote ?? ""})" : "Bekliyor")
+                : "-";
+            ws.Cell(r, 18).Value = row.SgkExitProcessed
+                ? $"Yapıldı ({row.SgkExitNo ?? "-"})"
+                : (row.Status == InternshipStatus.Cancelled ? "Bekliyor" : "-");
+            ws.Cell(r, 19).Value = row.KptoNote ?? "";
             r++;
         }
 

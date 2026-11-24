@@ -87,4 +87,19 @@ public class Document
     /// Belgenin arşivlenmiş önceki sürümleri.
     /// </summary>
     public ICollection<DocumentVersion> Versions { get; set; } = new List<DocumentVersion>();
+
+    /// <summary>
+    /// Maaş dekontu veya benzeri evrakın KPTO tarafından doğrulanıp doğrulanmadığı.
+    /// </summary>
+    public bool IsVerifiedByKpto { get; set; }
+
+    /// <summary>
+    /// KPTO tarafından doğrulandığı tarih.
+    /// </summary>
+    public DateTime? VerifiedByKptoAt { get; set; }
+
+    /// <summary>
+    /// Doğrulamayı yapan KPTO görevlisinin kullanıcı kimliği.
+    /// </summary>
+    public Guid? VerifiedByKptoUserId { get; set; }
 }
