@@ -129,7 +129,39 @@ public class InternshipService
         int? day = null;
         if (i.Status is InternshipStatus.ApprovedByCommittee or InternshipStatus.InsuranceStarted or InternshipStatus.InProgress or InternshipStatus.CompletedPendingReview or InternshipStatus.Passed)
             day = await _calc.CurrentDayAsync(i.StartDate, i.EndDate, Today, i.WorksOnSaturday, ct);
-        return i.ToDetail(day);
+        var dto = i.ToDetail(day);
+        if (_currentUser.Role == UserRole.Student && !string.IsNullOrWhiteSpace(dto.AdvisorEmailStatus))
+        {
+            var sanitized = System.Text.RegularExpressions.Regex.Replace(
+                dto.AdvisorEmailStatus,
+                @"geçici şifre \([^)]+\)",
+                "geçici şifre (***)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            dto = dto with { AdvisorEmailStatus = sanitized };
+        }
+        return dto;
+    }
+
+    /// <summary>
+    /// Belge veya QR kod üzerindeki doğrulama koduyla staj kaydını KVKK maskeli olarak doğrular.
+    /// </summary>
+    public async Task<VerifyResultDto> VerifyAsync(Guid code, CancellationToken ct = default)
+    {
+        var i = await _db.Internships
+            .Include(x => x.Student).Include(x => x.Company).Include(x => x.Term)
+            .FirstOrDefaultAsync(x => x.VerificationCode == code, ct);
+        if (i is null)
+            return new VerifyResultDto(false, null, null, null, null, null, null, null);
+
+        var maskedName = MaskFullName(i.Student.FullName);
+        return new VerifyResultDto(true, maskedName, i.Student.StudentNo, i.Company.Name, i.Term.Name, i.StartDate, i.EndDate, i.Status);
+    }
+
+    private static string MaskFullName(string fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName)) return "-";
+        var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(' ', parts.Select(p => p.Length <= 2 ? p[0] + "***" : p[..2] + "***"));
     }
 
     // =====================================================================

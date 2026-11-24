@@ -133,7 +133,6 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
     sources: PreviewSource[];
     initialIndex?: number;
   } | null>(null);
-  const [showEmailModal, setShowEmailModal] = useState(false);
 
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
@@ -448,23 +447,6 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
         text: `Staj defteriniz (${logbook.length}/${selected.workDays} gün) sorumlu mühendis ${selected.advisorName} (${selected.advisorEmail}) onayına gönderildi ve bilgilendirme e-postası iletildi!`,
       });
       await loadAll();
-    } catch (err) {
-      setMsg({ type: 'err', text: getErrorMessage(err) });
-    }
-  };
-
-  // Madde 7: Şirket danışmanı e-posta takibi / tekrar gönderim
-  const handleResendAdvisorEmail = async () => {
-    if (!selected) return;
-    setMsg(null);
-    try {
-      await api.post(`/internships/${selected.id}/resend-advisor-email`);
-      await loadAll();
-      setShowEmailModal(true);
-      setMsg({
-        type: 'ok',
-        text: `Şirket danışmanı (${selected.advisorEmail}) adresine bilgilendirme e-postası ve geçici giriş şifresi tekrar gönderildi.`,
-      });
     } catch (err) {
       setMsg({ type: 'err', text: getErrorMessage(err) });
     }
@@ -1727,28 +1709,6 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                           Şirket Danışmanı / Sorumlu Mühendis ({selected.advisorName}) E-Posta ve Onay Takibi
                         </span>
                       </div>
-                      {isApprovedInternship && (
-                        <div className="flex flex-wrap items-center gap-2">
-                          {selected.advisorEmailStatus && (
-                            <button
-                              type="button"
-                              onClick={() => setShowEmailModal(true)}
-                              className="flex items-center gap-1 rounded-lg bg-indigo-700 px-2.5 py-1 text-[11px] font-bold text-white shadow-2xs hover:bg-indigo-800"
-                            >
-                              <Eye className="h-3 w-3" />
-                              Gönderilen E-Postayı & Şifreyi Görüntüle
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={handleResendAdvisorEmail}
-                            className="flex items-center gap-1 rounded-lg border border-indigo-300 bg-white px-2.5 py-1 text-[11px] font-bold text-indigo-800 hover:bg-indigo-100"
-                          >
-                            <Send className="h-3 w-3" />
-                            Mühendise Bilgilendirme E-Postasını Tekrar Gönder
-                          </button>
-                        </div>
-                      )}
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 text-xs">
@@ -3278,116 +3238,6 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                 </div>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Gönderilen E-Posta & Geçici Şifre Simülasyon Modalı */}
-      {showEmailModal && selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
-                  <Mail className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-extrabold text-slate-900">
-                    📨 Gönderilen Bilgilendirme E-Postası & Giriş Bilgileri
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Yerel Sunum / Test E-Posta Önizlemesi ({selected.advisorEmail})
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowEmailModal(false)}
-                className="rounded-lg px-2 py-1 text-xs font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-              >
-                ✕ Kapat
-              </button>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs space-y-1.5">
-              <div>
-                <span className="font-bold text-slate-500">Kimden:</span>{' '}
-                <span className="font-semibold text-slate-800">
-                  Selçuk Üniversitesi Bilgisayar Müh. Staj Komisyonu &lt;staj@selcuk.edu.tr&gt;
-                </span>
-              </div>
-              <div>
-                <span className="font-bold text-slate-500">Kime:</span>{' '}
-                <span className="font-bold text-indigo-700">
-                  {selected.advisorName} &lt;{selected.advisorEmail}&gt;
-                </span>
-              </div>
-              <div>
-                <span className="font-bold text-slate-500">Konu:</span>{' '}
-                <span className="font-bold text-slate-900">
-                  [S.Ü. Staj Sistemi] Stajyer Onayı ve Şirket Danışmanı Paneli Giriş Bilgileriniz
-                </span>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-indigo-200 bg-white p-4 text-xs leading-relaxed text-slate-700 space-y-3">
-              <p>
-                Sayın <b>{selected.advisorName}</b> (Sorumlu Mühendis),
-              </p>
-              <p>
-                Kurumunuz <b>{selected.companyName}</b> bünyesinde staj yapacak olan Selçuk Üniversitesi
-                Teknoloji Fakültesi Bilgisayar Mühendisliği Bölümü öğrencimiz{' '}
-                <b>
-                  {selected.studentName} ({selected.studentNo})
-                </b>{' '}
-                için staj başvurusu Staj Komisyonumuz tarafından onaylanmıştır.
-              </p>
-              <p>
-                Öğrencimizin günlük staj raporlarını (Sanal Staj Defteri) incelemek, gerekirse revize talep
-                etmek ve staj sonunda onaylamak için aşağıdaki giriş bilgileriyle{' '}
-                <b>Şirket Yetkilisi Paneli</b>'ne giriş yapabilirsiniz:
-              </p>
-
-              {(() => {
-                const match = selected.advisorEmailStatus?.match(/geçici şifre \(([^)]+)\)/i);
-                const extractedPass = match ? match[1] : 'Danisman123!';
-                return (
-                  <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/80 p-3.5 space-y-1.5">
-                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-indigo-900">
-                      🔐 Şirket Danışmanı (Sorumlu Mühendis) Giriş Bilgileri
-                    </div>
-                    <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 text-xs">
-                      <div>
-                        <span className="text-slate-500">E-Posta (Kullanıcı Adı):</span>
-                        <p className="font-mono font-bold text-slate-900 select-all">
-                          {selected.advisorEmail}
-                        </p>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Geçici Giriş Şifresi:</span>
-                        <p className="font-mono text-sm font-extrabold text-indigo-700 select-all">
-                          {extractedPass}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <p className="text-[11px] text-slate-500">
-                Sistem Durum Kaydı: {selected.advisorEmailStatus || 'Hesap aktif.'}
-              </p>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setShowEmailModal(false)}
-                className="rounded-xl bg-indigo-700 px-5 py-2 text-xs font-bold text-white hover:bg-indigo-800"
-              >
-                Tamam, Kapat
-              </button>
-            </div>
           </div>
         </div>
       )}

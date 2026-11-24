@@ -6,6 +6,7 @@ import {
   GraduationCap,
   KeyRound,
   LogOut,
+  QrCode,
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
@@ -21,6 +22,7 @@ import {
 import { AdvisorPanel } from './components/AdvisorPanel';
 import { CommitteePanel } from './components/CommitteePanel';
 import { KptoPanel } from './components/KptoPanel';
+import { QrVerifyModal } from './components/QrVerifyModal';
 import { StudentPanel } from './components/StudentPanel';
 
 const STUDENT_DEMO_ACCOUNT = {
@@ -77,7 +79,17 @@ export function App() {
   const [newPassword, setNewPassword] = useState('');
   const [passMsg, setPassMsg] = useState<string | null>(null);
 
+  // QR / Belge Doğrulama Modalı
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrInitialCode, setQrInitialCode] = useState<string | undefined>(undefined);
+
   useEffect(() => {
+    const verifyParam = new URLSearchParams(window.location.search).get('verify');
+    if (verifyParam) {
+      setQrInitialCode(verifyParam);
+      setShowQrModal(true);
+    }
+
     const token = localStorage.getItem('staj_token');
     if (!token) {
       setLoadingAuth(false);
@@ -195,6 +207,16 @@ export function App() {
           </div>
 
           <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setShowQrModal(true)}
+              title="Resmî Belge / QR Kod Doğrula"
+              className="flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-100"
+            >
+              <QrCode className="h-4 w-4" />
+              <span className="hidden sm:inline">QR Doğrula</span>
+            </button>
+
             {user && (
               <>
                 {/* Bildirim Zili */}
@@ -355,6 +377,17 @@ export function App() {
                     <span className="mt-4 inline-flex items-center rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white group-hover:bg-amber-700">
                       Yönetici Girişine Git →
                     </span>
+                  </button>
+                </div>
+
+                <div className="mt-6 border-t border-slate-200 pt-5 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowQrModal(true)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-slate-50 px-5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:border-blue-400 hover:text-blue-800 transition"
+                  >
+                    <QrCode className="h-4 w-4 text-blue-700" />
+                    Resmî Belge / QR Kod Doğrulama
                   </button>
                 </div>
               </div>
@@ -610,6 +643,17 @@ export function App() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* QR / Resmî Belge Doğrulama Modalı */}
+      {showQrModal && (
+        <QrVerifyModal
+          initialCode={qrInitialCode}
+          onClose={() => {
+            setShowQrModal(false);
+            setQrInitialCode(undefined);
+          }}
+        />
       )}
     </div>
   );

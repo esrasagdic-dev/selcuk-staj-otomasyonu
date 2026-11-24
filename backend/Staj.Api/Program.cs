@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Staj.Application;
@@ -27,10 +28,27 @@ builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
-// CORS
+builder.Services.Configure<ForwardedHeadersOptions>(opt =>
+{
+    opt.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    opt.KnownNetworks.Clear();
+    opt.KnownProxies.Clear();
+});
+
+// CORS (Yapılandırılabilir AllowedOrigins)
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+if (allowedOrigins is not { Length: > 0 })
+{
+    allowedOrigins = new[]
+    {
+        "http://localhost:3000", "http://127.0.0.1:3000",
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:8080", "http://127.0.0.1:8080"
+    };
+}
 builder.Services.AddCors(opt =>
 {
-    opt.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+    opt.AddDefaultPolicy(p => p.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod());
 });
 
 // JWT Kimlik Doğrulama
@@ -74,11 +92,9 @@ using (var scope = app.Services.CreateScope())
     var storage = scope.ServiceProvider.GetRequiredService<IFileStorage>();
     await DbSeeder.SeedAsync(db, hasher);
 
-    var resetFlagPath = Path.Combine(app.Environment.ContentRootPath, "reset_internships_done.flag");
-    if (args.Contains("--reset-internships") || !File.Exists(resetFlagPath))
+    if (args.Contains("--reset-internships"))
     {
         await DbSeeder.ResetInternshipsAsync(db, storage);
-        await File.WriteAllTextAsync(resetFlagPath, DateTime.UtcNow.ToString("O"));
     }
 }
 
@@ -101,12 +117,16 @@ app.Use(async (ctx, next) =>
         logger.LogError(ex, "Beklenmeyen sunucu hatası");
         ctx.Response.StatusCode = 500;
         ctx.Response.ContentType = "application/json";
-        await ctx.Response.WriteAsJsonAsync(new { error = "Sunucu hatası: " + ex.Message });
+        var errMsg = app.Environment.IsDevelopment()
+            ? "Sunucu hatası: " + ex.Message
+            : "Beklenmeyen bir sunucu hatası oluştu.";
+        await ctx.Response.WriteAsJsonAsync(new { error = errMsg });
     }
 });
 
 app.UseSwagger();
 app.UseSwaggerUI();
+app.UseForwardedHeaders();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -265,7 +285,8 @@ internships.MapPost("/{id:guid}/form7/submit", (Guid id, Form7Request req, Inter
 internships.MapGet("/{id:guid}/logbook", (Guid id, InternshipService svc, CancellationToken ct) => svc.GetLogbookAsync(id, ct));
 internships.MapPost("/{id:guid}/logbook", (Guid id, LogbookUpsertRequest req, InternshipService svc, CancellationToken ct) => svc.UpsertLogbookAsync(id, req, ct));
 internships.MapPost("/{id:guid}/logbook/submit-to-advisor", (Guid id, InternshipService svc, CancellationToken ct) => svc.SubmitLogbookToAdvisorAsync(id, ct));
-internships.MapPost("/{id:guid}/resend-advisor-email", (Guid id, InternshipService svc, CancellationToken ct) => svc.ResendAdvisorEmailAsync(id, ct));
+internships.MapPost("/{id:guid}/resend-advisor-email", (Guid id, InternshipService svc, CancellationToken ct) => svc.ResendAdvisorEmailAsync(id, ct))
+    .RequireAuthorization("Committee");
 internships.MapDelete("/{id:guid}/logbook/{entryId:guid}", async (Guid id, Guid entryId, InternshipService svc, CancellationToken ct) =>
 {
     await svc.DeleteLogbookAsync(id, entryId, ct);
@@ -343,6 +364,13 @@ notifications.MapPost("/read-all", async (NotificationService svc, CancellationT
     await svc.MarkAllReadAsync(ct);
     return Results.NoContent();
 });
+
+// =========================================================================
+//  8. HERKESE AÇIK QR KOD / BELGE DOĞRULAMA
+// =========================================================================
+api.MapGet("/verify/{code:guid}", (Guid code, InternshipService svc, CancellationToken ct) => svc.VerifyAsync(code, ct))
+    .WithTags("Verify")
+    .AllowAnonymous();
 
 app.Run();
 

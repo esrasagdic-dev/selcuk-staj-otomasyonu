@@ -73,7 +73,7 @@ public class KptoService
         i.KptoStatus = KptoInsuranceStatus.InsuranceActive;
         i.KptoNote = null;
         i.InsuranceStartedAt = DateTime.UtcNow;
-        i.Status = DateOnly.FromDateTime(DateTime.Today) >= i.StartDate ? InternshipStatus.InProgress : InternshipStatus.InsuranceStarted;
+        i.Status = WorkDayCalculator.EffectiveToday >= i.StartDate ? InternshipStatus.InProgress : InternshipStatus.InsuranceStarted;
         i.UpdatedAt = DateTime.UtcNow;
 
         _notify.ToUser(i.StudentId, "Sigortanız Başlatıldı ✔", "Sigortanız başlatıldı, staja başlayabilirsiniz.", NotificationType.Success, i.Id);

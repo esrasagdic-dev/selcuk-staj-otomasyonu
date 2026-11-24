@@ -1,3 +1,4 @@
+using QRCoder;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
@@ -20,15 +21,23 @@ public class QuestPdfService : IPdfService
         UniversityLogoBytes = TryLoadLogo();
     }
 
+    private static byte[] GenerateQrPng(string text)
+    {
+        using var gen = new QRCodeGenerator();
+        using var data = gen.CreateQrCode(text, QRCodeGenerator.ECCLevel.Q);
+        using var qr = new PngByteQRCode(data);
+        return qr.GetGraphic(5);
+    }
+
     private static byte[]? TryLoadLogo()
     {
         var baseDirs = new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory };
         var relativePaths = new[]
         {
+            Path.Combine("wwwroot", "selcuk-amblem.png"),
             Path.Combine("..", "..", "frontend", "public", "selcuk-amblem.png"),
             Path.Combine("..", "..", "frontend", "public", "rapor-media1.png"),
             Path.Combine("..", "..", "..", "formlar", "selcuküniamblem.png"),
-            Path.Combine("wwwroot", "selcuk-amblem.png"),
             "selcuk-amblem.png"
         };
 
@@ -293,11 +302,21 @@ public class QuestPdfService : IPdfService
                 });
 
                 // =============================================================
-                //  ALT BİLGİ NOTU
+                //  ALT BİLGİ NOTU + QR KOD DOĞRULAMA
                 // =============================================================
-                page.Footer().PaddingTop(4).Text(
-                    "Not : 1- Bu evrak öğrenci tarafından 2 asıl nüsha düzenlenerek ve onayları tamamlanarak bölüm sekreterliğine teslim edilecektir.")
-                    .FontSize(7.5f).Italic();
+                var qrBytes = GenerateQrPng(i.VerificationCode.ToString());
+                page.Footer().PaddingTop(4).Row(r =>
+                {
+                    r.RelativeItem().AlignMiddle().Column(fc =>
+                    {
+                        fc.Item().Text(
+                            "Not : 1- Bu evrak öğrenci tarafından 2 asıl nüsha düzenlenerek ve onayları tamamlanarak bölüm sekreterliğine teslim edilecektir.")
+                            .FontSize(7.5f).Italic();
+                        fc.Item().PaddingTop(2).Text($"Doğrulama Kodu: {i.VerificationCode}")
+                            .FontSize(7f).Bold().FontColor(Colors.Grey.Darken2);
+                    });
+                    r.ConstantItem(44).Height(44).AlignRight().AlignMiddle().Image(qrBytes).FitArea();
+                });
             });
         });
 
@@ -825,10 +844,14 @@ public class QuestPdfService : IPdfService
                     c.Item().PaddingTop(4).AlignCenter().Text($"({i.StartDate:dd.MM.yyyy} - {i.EndDate:dd.MM.yyyy} • {i.WorkDays} İş Günü)").FontSize(10.5f).FontColor(Colors.Grey.Darken2);
                 });
 
+                var coverQrBytes = GenerateQrPng(i.VerificationCode.ToString());
                 col.Item().ExtendVertical().AlignBottom().Column(b =>
                 {
                     b.Item().AlignCenter().Text(i.StartDate.Year.ToString()).Bold().FontSize(14);
                     b.Item().PaddingTop(2).AlignCenter().Text("KONYA").Bold().FontSize(14);
+                    b.Item().PaddingTop(10).AlignCenter().Width(52).Height(52).Image(coverQrBytes).FitArea();
+                    b.Item().PaddingTop(2).AlignCenter().Text($"Doğrulama Kodu: {i.VerificationCode}")
+                        .FontSize(7.5f).FontColor(Colors.Grey.Darken2);
                 });
             });
         });

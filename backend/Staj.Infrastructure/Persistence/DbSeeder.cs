@@ -23,42 +23,110 @@ public static class DbSeeder
     {
         await db.Database.EnsureCreatedAsync();
 
-        try
+        if (db.Database.IsNpgsql())
         {
-            await db.Database.ExecuteSqlRawAsync("DROP INDEX IF EXISTS \"IX_LogbookEntries_InternshipId_Date\";");
-            await db.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS \"IX_LogbookEntries_InternshipId_Date\" ON \"LogbookEntries\" (\"InternshipId\", \"Date\");");
-            await db.Database.ExecuteSqlRawAsync("""
-                CREATE TABLE IF NOT EXISTS "Announcements" (
-                    "Id" TEXT NOT NULL CONSTRAINT "PK_Announcements" PRIMARY KEY,
-                    "Title" TEXT NOT NULL,
-                    "Content" TEXT NOT NULL,
-                    "Category" TEXT NOT NULL,
-                    "IsPinned" INTEGER NOT NULL DEFAULT 0,
-                    "IsActive" INTEGER NOT NULL DEFAULT 1,
-                    "CreatedById" TEXT NULL,
-                    "CreatedAt" TEXT NOT NULL
-                );
-                """);
-        }
-        catch
-        {
-            // SQLite veya farklı sağlayıcıda hata verirse yoksay
-        }
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync("DROP INDEX IF EXISTS \"IX_LogbookEntries_InternshipId_Date\";");
+                await db.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS \"IX_LogbookEntries_InternshipId_Date\" ON \"LogbookEntries\" (\"InternshipId\", \"Date\");");
+                await db.Database.ExecuteSqlRawAsync("""
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'Announcements' AND column_name = 'IsActive' AND data_type = 'integer'
+                        ) THEN
+                            DROP TABLE "Announcements";
+                        END IF;
+                    END $$;
+                    CREATE TABLE IF NOT EXISTS "Announcements" (
+                        "Id" uuid NOT NULL CONSTRAINT "PK_Announcements" PRIMARY KEY,
+                        "Title" text NOT NULL,
+                        "Content" text NOT NULL,
+                        "Category" text NOT NULL,
+                        "IsPinned" boolean NOT NULL DEFAULT FALSE,
+                        "IsActive" boolean NOT NULL DEFAULT TRUE,
+                        "CreatedById" uuid NULL,
+                        "CreatedAt" timestamp with time zone NOT NULL
+                    );
+                    """);
 
-        string[] alterColumns =
+                await db.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "WorksOnSaturday" boolean NOT NULL DEFAULT FALSE;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "LogbookSubmittedToAdvisorAt" timestamp with time zone NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "LogbookRevisionRequested" boolean NOT NULL DEFAULT FALSE;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "LogbookRevisionNote" text NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AdvisorEmailSentAt" timestamp with time zone NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AdvisorEmailStatus" text NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AdvisorLastLoginAt" timestamp with time zone NULL;
+                    DO $$
+                    BEGIN
+                        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Internships' AND column_name = 'WorksOnSaturday' AND data_type = 'integer') THEN
+                            ALTER TABLE "Internships" ALTER COLUMN "WorksOnSaturday" DROP DEFAULT;
+                            ALTER TABLE "Internships" ALTER COLUMN "WorksOnSaturday" TYPE boolean USING ("WorksOnSaturday" <> 0);
+                            ALTER TABLE "Internships" ALTER COLUMN "WorksOnSaturday" SET DEFAULT FALSE;
+                        END IF;
+                        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Internships' AND column_name = 'LogbookRevisionRequested' AND data_type = 'integer') THEN
+                            ALTER TABLE "Internships" ALTER COLUMN "LogbookRevisionRequested" DROP DEFAULT;
+                            ALTER TABLE "Internships" ALTER COLUMN "LogbookRevisionRequested" TYPE boolean USING ("LogbookRevisionRequested" <> 0);
+                            ALTER TABLE "Internships" ALTER COLUMN "LogbookRevisionRequested" SET DEFAULT FALSE;
+                        END IF;
+                        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Internships' AND column_name = 'LogbookSubmittedToAdvisorAt' AND data_type = 'text') THEN
+                            ALTER TABLE "Internships" ALTER COLUMN "LogbookSubmittedToAdvisorAt" TYPE timestamp with time zone USING NULLIF("LogbookSubmittedToAdvisorAt", '')::timestamptz;
+                        END IF;
+                        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Internships' AND column_name = 'AdvisorEmailSentAt' AND data_type = 'text') THEN
+                            ALTER TABLE "Internships" ALTER COLUMN "AdvisorEmailSentAt" TYPE timestamp with time zone USING NULLIF("AdvisorEmailSentAt", '')::timestamptz;
+                        END IF;
+                        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Internships' AND column_name = 'AdvisorLastLoginAt' AND data_type = 'text') THEN
+                            ALTER TABLE "Internships" ALTER COLUMN "AdvisorLastLoginAt" TYPE timestamp with time zone USING NULLIF("AdvisorLastLoginAt", '')::timestamptz;
+                        END IF;
+                    END $$;
+                    """);
+            }
+            catch
+            {
+                // Yoksay
+            }
+        }
+        else
         {
-            "ALTER TABLE \"Internships\" ADD COLUMN \"WorksOnSaturday\" INTEGER NOT NULL DEFAULT 0;",
-            "ALTER TABLE \"Internships\" ADD COLUMN \"LogbookSubmittedToAdvisorAt\" TEXT NULL;",
-            "ALTER TABLE \"Internships\" ADD COLUMN \"LogbookRevisionRequested\" INTEGER NOT NULL DEFAULT 0;",
-            "ALTER TABLE \"Internships\" ADD COLUMN \"LogbookRevisionNote\" TEXT NULL;",
-            "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorEmailSentAt\" TEXT NULL;",
-            "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorEmailStatus\" TEXT NULL;",
-            "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorLastLoginAt\" TEXT NULL;"
-        };
-        foreach (var sql in alterColumns)
-        {
-            try { await db.Database.ExecuteSqlRawAsync(sql); }
-            catch { /* Sütun zaten varsa yoksay */ }
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync("DROP INDEX IF EXISTS \"IX_LogbookEntries_InternshipId_Date\";");
+                await db.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS \"IX_LogbookEntries_InternshipId_Date\" ON \"LogbookEntries\" (\"InternshipId\", \"Date\");");
+                await db.Database.ExecuteSqlRawAsync("""
+                    CREATE TABLE IF NOT EXISTS "Announcements" (
+                        "Id" TEXT NOT NULL CONSTRAINT "PK_Announcements" PRIMARY KEY,
+                        "Title" TEXT NOT NULL,
+                        "Content" TEXT NOT NULL,
+                        "Category" TEXT NOT NULL,
+                        "IsPinned" INTEGER NOT NULL DEFAULT 0,
+                        "IsActive" INTEGER NOT NULL DEFAULT 1,
+                        "CreatedById" TEXT NULL,
+                        "CreatedAt" TEXT NOT NULL
+                    );
+                    """);
+            }
+            catch
+            {
+                // SQLite veya farklı sağlayıcıda hata verirse yoksay
+            }
+
+            string[] alterColumns =
+            {
+                "ALTER TABLE \"Internships\" ADD COLUMN \"WorksOnSaturday\" INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"LogbookSubmittedToAdvisorAt\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"LogbookRevisionRequested\" INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"LogbookRevisionNote\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorEmailSentAt\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorEmailStatus\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorLastLoginAt\" TEXT NULL;"
+            };
+            foreach (var sql in alterColumns)
+            {
+                try { await db.Database.ExecuteSqlRawAsync(sql); }
+                catch { /* Sütun zaten varsa yoksay */ }
+            }
         }
 
         if (!await db.Users.AnyAsync(u => u.Email == "233311056@ogr.selcuk.edu.tr"))

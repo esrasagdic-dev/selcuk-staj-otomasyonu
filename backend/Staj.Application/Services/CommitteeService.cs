@@ -215,7 +215,7 @@ public class CommitteeService
         if (i.Status != InternshipStatus.CancellationRequested)
             throw AppException.BadRequest("Bu başvuru için bekleyen bir staj iptal talebi bulunmuyor.");
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = WorkDayCalculator.EffectiveToday;
         if (i.KptoStatus == KptoInsuranceStatus.InsuranceActive)
             i.Status = today >= i.StartDate ? InternshipStatus.InProgress : InternshipStatus.InsuranceStarted;
         else if (i.ApprovedAt.HasValue)
