@@ -14,6 +14,8 @@ namespace Staj.Application.Services;
 public class InternshipService
 {
     private static readonly string[] AllowedExtensions = { ".pdf", ".jpg", ".jpeg", ".png" };
+    private static readonly string[] AllowedImageExtensions = { ".png", ".jpg", ".jpeg", ".webp" };
+    private const long MaxImageBytes = 5L * 1024L * 1024L;
 
     private static readonly InternshipStatus[] ActiveStatuses =
     {
@@ -68,8 +70,8 @@ public class InternshipService
     {
         var i = await _db.Internships
             .Include(x => x.Student).Include(x => x.Term).Include(x => x.Company)
-            .Include(x => x.Documents).Include(x => x.LeaveRequests).Include(x => x.LogbookEntries)
-    
+            .Include(x => x.Documents).ThenInclude(d => d.Versions)
+            .Include(x => x.LeaveRequests).Include(x => x.LogbookEntries)
             .FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw AppException.NotFound("Staj kaydı");
         EnsureCanView(i);
         return i;
@@ -175,8 +177,8 @@ public class InternshipService
     {
         var list = await _db.Internships
             .Include(x => x.Student).Include(x => x.Term).Include(x => x.Company)
-            .Include(x => x.Documents).Include(x => x.LeaveRequests).Include(x => x.LogbookEntries)
-    
+            .Include(x => x.Documents).ThenInclude(d => d.Versions)
+            .Include(x => x.LeaveRequests).Include(x => x.LogbookEntries)
             .Where(x => x.StudentId == _currentUser.UserId)
             .OrderByDescending(x => x.CreatedAt)
             .ToListAsync(ct);
@@ -319,7 +321,15 @@ public class InternshipService
         var i = await LoadOwnAsync(id, ct);
         if (i.Status == InternshipStatus.Draft)
         {
-            foreach (var d in i.Documents) _files.Delete(d.StoredFileName);
+            foreach (var d in i.Documents)
+            {
+                _files.Delete(d.StoredFileName);
+                foreach (var v in d.Versions) _files.Delete(v.StoredFileName);
+            }
+            foreach (var e in i.LogbookEntries)
+            {
+                if (!string.IsNullOrWhiteSpace(e.ImageStoredFileName)) _files.Delete(e.ImageStoredFileName);
+            }
             _db.Internships.Remove(i);
         }
         else if (i.Status is InternshipStatus.Submitted or InternshipStatus.RevisionRequested)
@@ -350,24 +360,69 @@ public class InternshipService
 
         EnsureCanUpload(i, type);
 
-        // Tekil belgelerde eskisini sil (versiyonlama yerine son yüklenen geçerlidir).
-        if (type is DocumentType.Form2 or DocumentType.Spas or DocumentType.ResultForm or DocumentType.Form3)
+        var stored = await _files.SaveAsync(content, ext, ct);
+        Document doc;
+
+        // Tekil belgelerde önceki dosyayı silmek yerine sürüm geçmişine (DocumentVersion) arşivle.
+        if (type is DocumentType.Form2 or DocumentType.Spas or DocumentType.ResultForm or DocumentType.Form3 or DocumentType.Form7)
         {
-            foreach (var old in i.Documents.Where(d => d.Type == type).ToList())
+            var existing = i.Documents
+                .Where(d => d.Type == type)
+                .OrderByDescending(d => d.VersionNumber)
+                .ThenByDescending(d => d.UploadedAt)
+                .FirstOrDefault();
+
+            if (existing is not null)
             {
-                _files.Delete(old.StoredFileName);
-                _db.Documents.Remove(old);
+                _db.DocumentVersions.Add(new DocumentVersion
+                {
+                    DocumentId = existing.Id,
+                    VersionNumber = existing.VersionNumber,
+                    OriginalFileName = existing.OriginalFileName,
+                    StoredFileName = existing.StoredFileName,
+                    ContentType = existing.ContentType,
+                    SizeBytes = existing.SizeBytes,
+                    UploadedById = existing.UploadedById,
+                    UploadedAt = existing.UploadedAt
+                });
+
+                existing.VersionNumber += 1;
+                existing.OriginalFileName = Path.GetFileName(fileName);
+                existing.StoredFileName = stored;
+                existing.ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType;
+                existing.SizeBytes = length;
+                existing.UploadedById = _currentUser.UserId;
+                existing.UploadedAt = DateTime.UtcNow;
+                existing.Status = DocumentStatus.Pending;
+                existing.CommissionFeedback = null;
+                existing.ReviewedAt = null;
+                existing.ReviewedById = null;
+                doc = existing;
+            }
+            else
+            {
+                doc = new Document
+                {
+                    InternshipId = i.Id, Type = type, OriginalFileName = Path.GetFileName(fileName), StoredFileName = stored,
+                    ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType,
+                    SizeBytes = length, UploadedById = _currentUser.UserId,
+                    Status = DocumentStatus.Pending, VersionNumber = 1
+                };
+                _db.Documents.Add(doc);
             }
         }
-
-        var stored = await _files.SaveAsync(content, ext, ct);
-        var doc = new Document
+        else
         {
-            InternshipId = i.Id, Type = type, OriginalFileName = Path.GetFileName(fileName), StoredFileName = stored,
-            ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType,
-            SizeBytes = length, UploadedById = _currentUser.UserId
-        };
-        _db.Documents.Add(doc);
+            doc = new Document
+            {
+                InternshipId = i.Id, Type = type, OriginalFileName = Path.GetFileName(fileName), StoredFileName = stored,
+                ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType,
+                SizeBytes = length, UploadedById = _currentUser.UserId,
+                Status = DocumentStatus.Pending, VersionNumber = 1
+            };
+            _db.Documents.Add(doc);
+        }
+
         i.UpdatedAt = DateTime.UtcNow;
 
         if (type == DocumentType.SalaryReceipt)
@@ -418,17 +473,31 @@ public class InternshipService
     }
 
     /// <summary>
+    /// Belge sürüm geçmişinden arşivlenmiş eski bir sürümü indirir (yetki kontrolü ile).
+    /// </summary>
+    public async Task<StoredFileDto> DownloadVersionAsync(Guid versionId, CancellationToken ct = default)
+    {
+        var ver = await _db.DocumentVersions
+            .Include(v => v.Document)
+            .FirstOrDefaultAsync(v => v.Id == versionId, ct) ?? throw AppException.NotFound("Belge sürümü");
+        var i = await _db.Internships.FirstAsync(x => x.Id == ver.Document.InternshipId, ct);
+        EnsureCanView(i);
+        return new StoredFileDto(_files.OpenRead(ver.StoredFileName), ver.ContentType, ver.OriginalFileName);
+    }
+
+    /// <summary>
     /// Öğrencinin kendi yüklediği belgeyi siler (yalnızca başvuru gönderilmeden önce).
     /// </summary>
     public async Task DeleteDocumentAsync(Guid documentId, CancellationToken ct = default)
     {
-        var doc = await _db.Documents.FirstOrDefaultAsync(d => d.Id == documentId, ct) ?? throw AppException.NotFound("Belge");
+        var doc = await _db.Documents.Include(d => d.Versions).FirstOrDefaultAsync(d => d.Id == documentId, ct) ?? throw AppException.NotFound("Belge");
         var i = await LoadAsync(doc.InternshipId, ct);
         if (doc.UploadedById != _currentUser.UserId) throw AppException.Forbidden("Yalnızca kendi yüklediğiniz belgeyi silebilirsiniz.");
         if (_currentUser.Role == UserRole.Student && doc.Type is DocumentType.Form2 or DocumentType.Spas &&
             i.Status is not (InternshipStatus.Draft or InternshipStatus.RevisionRequested))
             throw AppException.BadRequest("Gönderilmiş başvurunun evrakı silinemez.");
         _files.Delete(doc.StoredFileName);
+        foreach (var ver in doc.Versions) _files.Delete(ver.StoredFileName);
         _db.Documents.Remove(doc);
         await _db.SaveChangesAsync(ct);
     }
@@ -609,8 +678,17 @@ public class InternshipService
         if (i.Status is not (InternshipStatus.ApprovedByCommittee or InternshipStatus.InsuranceStarted or InternshipStatus.InProgress or InternshipStatus.CompletedPendingReview))
             throw AppException.BadRequest("Staj defteri yalnızca onaylanmış staj sürecinde doldurulabilir.");
         if (i.AdvisorLogbookApproved) throw AppException.BadRequest("Şirket yetkilisi defteri onayladıktan sonra değişiklik yapılamaz.");
-        if (string.IsNullOrWhiteSpace(req.Content))
-            throw AppException.BadRequest("Rapor içeriği boş bırakılamaz.");
+        if (i.IsLogbookLocked) throw AppException.BadRequest($"Staj defteri kilitlidir: {i.LogbookLockReason ?? "Değişiklik yapılamaz."}");
+
+        if (req.IsDraft)
+        {
+            if (string.IsNullOrWhiteSpace(req.Title) && string.IsNullOrWhiteSpace(req.Content))
+                throw AppException.BadRequest("Taslak olarak kaydetmek için başlık veya içerik alanlarından en az birini doldurunuz.");
+        }
+        else if (string.IsNullOrWhiteSpace(req.Content))
+        {
+            throw AppException.BadRequest("Tamamlanmış rapor içeriği boş bırakılamaz (taslak olarak kaydedebilirsiniz).");
+        }
 
         LogbookEntry? entry = null;
         if (req.Id.HasValue)
@@ -663,7 +741,10 @@ public class InternshipService
         }
 
         entry.Title = string.IsNullOrWhiteSpace(req.Title) ? $"{entry.DayNumber}. Sayfa Staj Raporu" : req.Title.Trim();
-        entry.Content = req.Content.Trim();
+        entry.Content = (req.Content ?? string.Empty).Trim();
+        entry.IsDraft = req.IsDraft;
+        if (req.ImageCaption is not null)
+            entry.ImageCaption = string.IsNullOrWhiteSpace(req.ImageCaption) ? null : req.ImageCaption.Trim();
         entry.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return entry.ToDto();
@@ -676,7 +757,10 @@ public class InternshipService
     {
         var i = await LoadOwnAsync(id, ct);
         if (i.AdvisorLogbookApproved) throw AppException.BadRequest("Onaylanmış defterden sayfa silinemez.");
+        if (i.IsLogbookLocked) throw AppException.BadRequest($"Staj defteri kilitlidir: {i.LogbookLockReason ?? "Sayfa silinemez."}");
         var e = i.LogbookEntries.FirstOrDefault(x => x.Id == entryId) ?? throw AppException.NotFound("Defter sayfası");
+        if (!string.IsNullOrWhiteSpace(e.ImageStoredFileName))
+            _files.Delete(e.ImageStoredFileName);
         _db.LogbookEntries.Remove(e);
         var remaining = i.LogbookEntries.Where(x => x.Id != entryId).OrderBy(x => x.DayNumber).ThenBy(x => x.Date).ToList();
         for (int idx = 0; idx < remaining.Count; idx++)
@@ -684,6 +768,109 @@ public class InternshipService
             remaining[idx].DayNumber = idx + 1;
         }
         await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Belirtilen sanal staj defteri sayfasına teknik görsel / şema (PNG, JPG, WEBP) ekler veya günceller.
+    /// </summary>
+    public async Task<LogbookEntryDto> UploadLogbookImageAsync(
+        Guid id, Guid entryId, Stream content, string fileName, string contentType, long length, string? caption, CancellationToken ct = default)
+    {
+        var i = await LoadOwnAsync(id, ct);
+        if (i.AdvisorLogbookApproved) throw AppException.BadRequest("Şirket yetkilisi defteri onayladıktan sonra görsel yüklenemez.");
+        if (i.IsLogbookLocked) throw AppException.BadRequest($"Staj defteri kilitlidir: {i.LogbookLockReason ?? "Görsel eklenemez."}");
+
+        var entry = i.LogbookEntries.FirstOrDefault(x => x.Id == entryId) ?? throw AppException.NotFound("Defter sayfası");
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        if (!AllowedImageExtensions.Contains(ext))
+            throw AppException.BadRequest("Yalnızca PNG, JPG veya WEBP formatında görsel yüklenebilir.");
+        if (length <= 0) throw AppException.BadRequest("Görsel dosyası boş.");
+        if (length > MaxImageBytes) throw AppException.BadRequest("Görsel boyutu en fazla 5 MB olabilir.");
+
+        if (!string.IsNullOrWhiteSpace(entry.ImageStoredFileName))
+            _files.Delete(entry.ImageStoredFileName);
+
+        var stored = await _files.SaveAsync(content, ext, ct);
+        entry.ImageStoredFileName = stored;
+        entry.ImageOriginalFileName = Path.GetFileName(fileName);
+        entry.ImageContentType = string.IsNullOrWhiteSpace(contentType) ? "image/png" : contentType;
+        if (caption is not null)
+            entry.ImageCaption = string.IsNullOrWhiteSpace(caption) ? null : caption.Trim();
+        entry.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+        return entry.ToDto();
+    }
+
+    /// <summary>
+    /// Defter sayfasındaki görseli siler.
+    /// </summary>
+    public async Task<LogbookEntryDto> DeleteLogbookImageAsync(Guid id, Guid entryId, CancellationToken ct = default)
+    {
+        var i = await LoadOwnAsync(id, ct);
+        if (i.AdvisorLogbookApproved) throw AppException.BadRequest("Onaylanmış defterden görsel silinemez.");
+        if (i.IsLogbookLocked) throw AppException.BadRequest($"Staj defteri kilitlidir: {i.LogbookLockReason ?? "Değişiklik yapılamaz."}");
+
+        var entry = i.LogbookEntries.FirstOrDefault(x => x.Id == entryId) ?? throw AppException.NotFound("Defter sayfası");
+        if (!string.IsNullOrWhiteSpace(entry.ImageStoredFileName))
+            _files.Delete(entry.ImageStoredFileName);
+
+        entry.ImageStoredFileName = null;
+        entry.ImageOriginalFileName = null;
+        entry.ImageContentType = null;
+        entry.ImageCaption = null;
+        entry.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+        return entry.ToDto();
+    }
+
+    /// <summary>
+    /// Defter sayfasındaki görseli indirir / görüntüler (yetki kontrolü ile).
+    /// </summary>
+    public async Task<StoredFileDto> DownloadLogbookImageAsync(Guid id, Guid entryId, CancellationToken ct = default)
+    {
+        var i = await LoadAsync(id, ct);
+        var entry = i.LogbookEntries.FirstOrDefault(x => x.Id == entryId) ?? throw AppException.NotFound("Defter sayfası");
+        if (string.IsNullOrWhiteSpace(entry.ImageStoredFileName))
+            throw AppException.NotFound("Sayfa görseli");
+
+        return new StoredFileDto(
+            _files.OpenRead(entry.ImageStoredFileName),
+            string.IsNullOrWhiteSpace(entry.ImageContentType) ? "image/png" : entry.ImageContentType!,
+            entry.ImageOriginalFileName ?? $"gun_{entry.DayNumber}.png");
+    }
+
+    /// <summary>
+    /// Sanal Staj Defteri Sayfa 2 (İşyeri ve Personel Tanıtımı - TF-BM-SF-02a) verilerini JSON olarak kaydeder.
+    /// </summary>
+    public async Task<InternshipDetailDto> SaveCoverPageAsync(Guid id, CoverPageDataDto req, CancellationToken ct = default)
+    {
+        var i = await LoadOwnAsync(id, ct);
+        if (i.Status is not (InternshipStatus.ApprovedByCommittee or InternshipStatus.InsuranceStarted or InternshipStatus.InProgress or InternshipStatus.CompletedPendingReview))
+            throw AppException.BadRequest("İşyeri tanıtım sayfası yalnızca onaylanmış staj sürecinde düzenlenebilir.");
+        if (i.AdvisorLogbookApproved) throw AppException.BadRequest("Şirket yetkilisi defteri onayladıktan sonra değişiklik yapılamaz.");
+        if (i.IsLogbookLocked) throw AppException.BadRequest($"Staj defteri kilitlidir: {i.LogbookLockReason ?? "Değişiklik yapılamaz."}");
+
+        var normalized = new CoverPageDataDto(
+            string.IsNullOrWhiteSpace(req.TotalEmployees) ? null : req.TotalEmployees.Trim(),
+            (req.ActivityAreas ?? new List<string>())
+                .Take(5)
+                .Select(a => a?.Trim() ?? string.Empty)
+                .ToList(),
+            (req.StaffMembers ?? new List<CoverStaffMemberDto>())
+                .Take(10)
+                .Select((s, idx) => new CoverStaffMemberDto(
+                    idx + 1,
+                    s.FullName?.Trim() ?? string.Empty,
+                    s.GraduatedDepartment?.Trim() ?? string.Empty,
+                    s.Role?.Trim() ?? string.Empty))
+                .ToList());
+
+        i.CoverPageDataJson = System.Text.Json.JsonSerializer.Serialize(normalized);
+        i.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return await ToDetailAsync(i, ct);
     }
 
     /// <summary>
@@ -696,8 +883,16 @@ public class InternshipService
             throw AppException.BadRequest("Staj defteri yalnızca onaylanmış staj sürecinde sorumlu mühendise gönderilebilir.");
         if (i.AdvisorLogbookApproved)
             throw AppException.BadRequest("Staj defteriniz zaten sorumlu mühendis tarafından onaylanmıştır.");
-        if (i.LogbookEntries.Count < i.WorkDays)
-            throw AppException.BadRequest($"Eksik staj defteri sorumlu mühendise gönderilemez! Toplam {i.WorkDays} iş gününün tamamını doldurmalısınız (Mevcut doldurulan: {i.LogbookEntries.Count} / {i.WorkDays} gün).");
+        if (i.IsLogbookLocked)
+            throw AppException.BadRequest($"Staj defteri kilitlidir: {i.LogbookLockReason ?? "Gönderim yapılamaz."}");
+
+        var completedCount = i.LogbookEntries.Count(e => !e.IsDraft);
+        var draftCount = i.LogbookEntries.Count(e => e.IsDraft);
+        if (completedCount < i.WorkDays)
+        {
+            var draftMsg = draftCount > 0 ? $" ({draftCount} sayfa hâlâ TASLAK durumunda!)" : "";
+            throw AppException.BadRequest($"Eksik staj defteri sorumlu mühendise gönderilemez! Toplam {i.WorkDays} iş gününün tamamı 'Tamamlandı' olarak kaydedilmelidir (Tamamlanan: {completedCount} / {i.WorkDays} gün){draftMsg}.");
+        }
 
         i.LogbookSubmittedToAdvisorAt = DateTime.UtcNow;
         i.LogbookRevisionRequested = false;

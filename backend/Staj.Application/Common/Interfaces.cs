@@ -21,6 +21,8 @@ public interface IAppDbContext
     DbSet<Internship> Internships { get; }
     /// <summary>Belgeler.</summary>
     DbSet<Document> Documents { get; }
+    /// <summary>Belge sürüm geçmişi.</summary>
+    DbSet<DocumentVersion> DocumentVersions { get; }
     /// <summary>Sanal defter sayfaları.</summary>
     DbSet<LogbookEntry> LogbookEntries { get; }
     /// <summary>İzin talepleri.</summary>

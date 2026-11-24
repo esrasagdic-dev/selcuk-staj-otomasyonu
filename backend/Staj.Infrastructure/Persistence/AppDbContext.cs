@@ -27,6 +27,8 @@ public class AppDbContext : DbContext, IAppDbContext
     /// <inheritdoc />
     public DbSet<Document> Documents => Set<Document>();
     /// <inheritdoc />
+    public DbSet<DocumentVersion> DocumentVersions => Set<DocumentVersion>();
+    /// <inheritdoc />
     public DbSet<LogbookEntry> LogbookEntries => Set<LogbookEntry>();
     /// <inheritdoc />
     public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
@@ -73,6 +75,11 @@ public class AppDbContext : DbContext, IAppDbContext
         b.Entity<Document>(e =>
         {
             e.HasOne(d => d.Internship).WithMany(i => i.Documents).HasForeignKey(d => d.InternshipId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<DocumentVersion>(e =>
+        {
+            e.HasOne(v => v.Document).WithMany(d => d.Versions).HasForeignKey(v => v.DocumentId).OnDelete(DeleteBehavior.Cascade);
         });
 
         b.Entity<LogbookEntry>(e =>

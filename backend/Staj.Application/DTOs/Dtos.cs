@@ -119,14 +119,36 @@ public record InternshipSummaryDto(
     int AcceptedDaysCount = 0,
     string? Subject = null);
 
+/// <summary>Belge sürüm geçmişi satırı.</summary>
+public record DocumentVersionDto(Guid Id, int VersionNumber, string OriginalFileName, long SizeBytes, DateTime UploadedAt);
+
 /// <summary>Yüklü belge bilgisi.</summary>
-public record DocumentDto(Guid Id, DocumentType Type, string OriginalFileName, long SizeBytes, DateTime UploadedAt);
+public record DocumentDto(
+    Guid Id, DocumentType Type, string OriginalFileName, long SizeBytes, DateTime UploadedAt,
+    DocumentStatus Status = DocumentStatus.Pending, string? CommissionFeedback = null,
+    int VersionNumber = 1, DateTime? ReviewedAt = null, List<DocumentVersionDto>? Versions = null);
+
+/// <summary>Komisyonun belge bazlı onay / düzeltme / ret inceleme isteği.</summary>
+public record DocumentReviewRequest(DocumentStatus Status, string? Feedback);
+
+/// <summary>Defter Sayfa 2 (TF-BM-SF-02a) personel tanıtım satırı.</summary>
+public record CoverStaffMemberDto(int RowNo, string FullName, string GraduatedDepartment, string Role);
+
+/// <summary>Defter Sayfa 2 (TF-BM-SF-02a) düzenlenebilir işyeri ve personel tanıtım verisi.</summary>
+public record CoverPageDataDto(string? TotalEmployees, List<string> ActivityAreas, List<CoverStaffMemberDto> StaffMembers);
+
+/// <summary>Komisyon defter kilitleme / kilit açma isteği.</summary>
+public record LogbookLockRequest(bool Locked, string? Reason);
 
 /// <summary>Sanal defter sayfası.</summary>
-public record LogbookEntryDto(Guid Id, int DayNumber, DateOnly Date, string Title, string Content, DateTime UpdatedAt);
+public record LogbookEntryDto(
+    Guid Id, int DayNumber, DateOnly Date, string Title, string Content, DateTime UpdatedAt,
+    bool IsDraft = false, bool HasImage = false, string? ImageOriginalFileName = null, string? ImageCaption = null);
 
 /// <summary>Sanal defter sayfası oluşturma / güncelleme isteği.</summary>
-public record LogbookUpsertRequest(DateOnly Date, string Title, string Content, Guid? Id = null, int? PageNumber = null);
+public record LogbookUpsertRequest(
+    DateOnly Date, string Title, string Content, Guid? Id = null, int? PageNumber = null,
+    bool IsDraft = false, string? ImageCaption = null);
 
 /// <summary>İzin / telafi talebi.</summary>
 public record LeaveRequestDto(
@@ -173,7 +195,10 @@ public record InternshipDetailDto(
     string? AdvisorGraduatedDepartment = null,
     AcademicResultType AcademicResult = AcademicResultType.None,
     int AcceptedDaysCount = 0,
-    string? AdvisorApprovedIpAddress = null);
+    string? AdvisorApprovedIpAddress = null,
+    bool IsLogbookLocked = false,
+    string? LogbookLockReason = null,
+    string? CoverPageDataJson = null);
 
 // ============================================================
 //  KPTO

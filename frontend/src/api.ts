@@ -57,6 +57,12 @@ export type DocumentType =
   | 'Form3'
   | 'Other';
 
+export type DocumentStatus =
+  | 'Pending'
+  | 'Approved'
+  | 'RevisionRequested'
+  | 'Rejected';
+
 export type LeaveType = 'Excuse' | 'MedicalReport';
 export type LeaveRequestStatus = 'Pending' | 'Approved' | 'Rejected';
 
@@ -166,12 +172,38 @@ export interface EndDateResponse {
   skippedSundays?: number;
 }
 
+export interface DocumentVersionDto {
+  id: string;
+  versionNumber: number;
+  originalFileName: string;
+  sizeBytes: number;
+  uploadedAt: string;
+}
+
 export interface DocumentDto {
   id: string;
   type: DocumentType;
   originalFileName: string;
   sizeBytes: number;
   uploadedAt: string;
+  status?: DocumentStatus;
+  commissionFeedback?: string | null;
+  versionNumber?: number;
+  reviewedAt?: string | null;
+  versions?: DocumentVersionDto[];
+}
+
+export interface CoverStaffMemberDto {
+  rowNo: number;
+  fullName: string;
+  graduatedDepartment: string;
+  role: string;
+}
+
+export interface CoverPageDataDto {
+  totalEmployees?: string | null;
+  activityAreas: string[];
+  staffMembers: CoverStaffMemberDto[];
 }
 
 export interface LogbookEntryDto {
@@ -181,6 +213,10 @@ export interface LogbookEntryDto {
   title: string;
   content: string;
   updatedAt: string;
+  isDraft?: boolean;
+  hasImage?: boolean;
+  imageOriginalFileName?: string | null;
+  imageCaption?: string | null;
 }
 
 export interface LeaveRequestDto {
@@ -287,6 +323,9 @@ export interface InternshipDetailDto {
   academicResult?: AcademicResultType;
   acceptedDaysCount?: number;
   advisorApprovedIpAddress?: string | null;
+  isLogbookLocked?: boolean;
+  logbookLockReason?: string | null;
+  coverPageDataJson?: string | null;
 }
 
 export interface KptoRowDto {
@@ -428,6 +467,20 @@ export const docTypeLabels: Record<DocumentType, string> = {
   InternshipReport: 'Staj Raporu / Defteri',
   Form3: 'Staj Devamlılık Formu (Form 3)',
   Other: 'Ek Belge',
+};
+
+export const documentStatusLabels: Record<DocumentStatus, string> = {
+  Pending: 'İnceleme Bekliyor',
+  Approved: 'Onaylandı',
+  RevisionRequested: 'Düzeltme İstendi',
+  Rejected: 'Reddedildi',
+};
+
+export const documentStatusColors: Record<DocumentStatus, string> = {
+  Pending: 'bg-amber-50 text-amber-800 border-amber-300',
+  Approved: 'bg-emerald-50 text-emerald-800 border-emerald-300',
+  RevisionRequested: 'bg-orange-50 text-orange-800 border-orange-300',
+  Rejected: 'bg-rose-50 text-rose-800 border-rose-300',
 };
 
 export function formatDate(d?: string | null): string {

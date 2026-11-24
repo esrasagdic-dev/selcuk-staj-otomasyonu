@@ -241,6 +241,12 @@ api.MapDelete("/documents/{documentId:guid}", async (Guid documentId, Internship
     return Results.NoContent();
 }).WithTags("Documents").RequireAuthorization();
 
+api.MapGet("/document-versions/{versionId:guid}", async (Guid versionId, InternshipService svc, CancellationToken ct) =>
+{
+    var f = await svc.DownloadVersionAsync(versionId, ct);
+    return Results.Stream(f.Stream, f.ContentType, f.FileName);
+}).WithTags("Documents").RequireAuthorization();
+
 // Resmi Form 2, Form 3, Form 4, Form 7 ve Staj Defteri PDF Üretimi
 internships.MapGet("/{id:guid}/pdf/form2", async (Guid id, InternshipService svc, CancellationToken ct) =>
 {
@@ -281,9 +287,22 @@ internships.MapPost("/{id:guid}/form7/preview", async (Guid id, Form7Request req
 internships.MapPost("/{id:guid}/form7/submit", (Guid id, Form7Request req, InternshipService svc, CancellationToken ct) =>
     svc.SubmitForm7CancelRequestAsync(id, req, ct));
 
-// Sanal Staj Defteri
+// Sanal Staj Defteri & Kapak Sayfası 2
+internships.MapPut("/{id:guid}/cover-page", (Guid id, CoverPageDataDto req, InternshipService svc, CancellationToken ct) => svc.SaveCoverPageAsync(id, req, ct));
 internships.MapGet("/{id:guid}/logbook", (Guid id, InternshipService svc, CancellationToken ct) => svc.GetLogbookAsync(id, ct));
 internships.MapPost("/{id:guid}/logbook", (Guid id, LogbookUpsertRequest req, InternshipService svc, CancellationToken ct) => svc.UpsertLogbookAsync(id, req, ct));
+internships.MapPost("/{id:guid}/logbook/{entryId:guid}/image", async (Guid id, Guid entryId, [FromForm] string? caption, IFormFile file, InternshipService svc, CancellationToken ct) =>
+{
+    await using var stream = file.OpenReadStream();
+    return await svc.UploadLogbookImageAsync(id, entryId, stream, file.FileName, file.ContentType, file.Length, caption, ct);
+}).DisableAntiforgery();
+internships.MapDelete("/{id:guid}/logbook/{entryId:guid}/image", (Guid id, Guid entryId, InternshipService svc, CancellationToken ct) =>
+    svc.DeleteLogbookImageAsync(id, entryId, ct));
+internships.MapGet("/{id:guid}/logbook/{entryId:guid}/image", async (Guid id, Guid entryId, InternshipService svc, CancellationToken ct) =>
+{
+    var f = await svc.DownloadLogbookImageAsync(id, entryId, ct);
+    return Results.Stream(f.Stream, f.ContentType, f.FileName);
+});
 internships.MapPost("/{id:guid}/logbook/submit-to-advisor", (Guid id, InternshipService svc, CancellationToken ct) => svc.SubmitLogbookToAdvisorAsync(id, ct));
 internships.MapPost("/{id:guid}/resend-advisor-email", (Guid id, InternshipService svc, CancellationToken ct) => svc.ResendAdvisorEmailAsync(id, ct))
     .RequireAuthorization("Committee");
@@ -308,6 +327,8 @@ committee.MapPost("/internships/{id:guid}/reject", (Guid id, NoteRequest req, Co
 committee.MapPost("/internships/{id:guid}/cancel", (Guid id, NoteRequest req, CommitteeService svc, CancellationToken ct) => svc.CancelAsync(id, req.Note, ct));
 committee.MapPost("/internships/{id:guid}/reject-cancel", (Guid id, NoteRequest req, CommitteeService svc, CancellationToken ct) => svc.RejectCancelRequestAsync(id, req.Note, ct));
 committee.MapPost("/internships/{id:guid}/evaluate", (Guid id, EvaluateRequest req, CommitteeService svc, CancellationToken ct) => svc.EvaluateAsync(id, req, ct));
+committee.MapPost("/documents/{documentId:guid}/review", (Guid documentId, DocumentReviewRequest req, CommitteeService svc, CancellationToken ct) => svc.ReviewDocumentAsync(documentId, req, ct));
+committee.MapPost("/internships/{id:guid}/logbook-lock", (Guid id, LogbookLockRequest req, CommitteeService svc, CancellationToken ct) => svc.SetLogbookLockAsync(id, req, ct));
 
 committee.MapGet("/leaves", (LeaveRequestStatus? status, CommitteeService svc, CancellationToken ct) => svc.ListLeavesAsync(status, ct));
 committee.MapPost("/leaves/{id:guid}/approve", (Guid id, NoteRequest req, CommitteeService svc, CancellationToken ct) => svc.ApproveLeaveAsync(id, req.Note, ct));

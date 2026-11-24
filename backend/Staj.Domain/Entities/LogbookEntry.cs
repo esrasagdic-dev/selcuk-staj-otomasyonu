@@ -41,6 +41,31 @@ public class LogbookEntry
     public string Content { get; set; } = string.Empty;
 
     /// <summary>
+    /// Sayfanın henüz taslak olarak kaydedilip edilmediği. Taslak sayfalar tamamlanmadan defter mühendise gönderilemez.
+    /// </summary>
+    public bool IsDraft { get; set; }
+
+    /// <summary>
+    /// Bu iş günü sayfasına eklenmiş görselin diskteki GUID dosya adı.
+    /// </summary>
+    public string? ImageStoredFileName { get; set; }
+
+    /// <summary>
+    /// Bu iş günü sayfasına eklenmiş görselin orijinal dosya adı.
+    /// </summary>
+    public string? ImageOriginalFileName { get; set; }
+
+    /// <summary>
+    /// Eklenen görselin MIME türü.
+    /// </summary>
+    public string? ImageContentType { get; set; }
+
+    /// <summary>
+    /// Görsel altı teknik açıklama metni.
+    /// </summary>
+    public string? ImageCaption { get; set; }
+
+    /// <summary>
     /// Oluşturulma tarihi.
     /// </summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

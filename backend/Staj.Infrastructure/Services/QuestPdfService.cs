@@ -1,8 +1,10 @@
+using System.Text.Json;
 using QRCoder;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using Staj.Application.Common;
+using Staj.Application.DTOs;
 using Staj.Domain.Entities;
 using Staj.Domain.Enums;
 
@@ -13,13 +15,20 @@ namespace Staj.Infrastructure.Services;
 /// </summary>
 public class QuestPdfService : IPdfService
 {
+    private static readonly JsonSerializerOptions CoverJsonOpts = new() { PropertyNameCaseInsensitive = true };
     private static readonly byte[]? UniversityLogoBytes;
+    private readonly IFileStorage _files;
 
     static QuestPdfService()
     {
         QuestPDF.Settings.License = LicenseType.Community;
         UniversityLogoBytes = TryLoadLogo();
     }
+
+    /// <summary>
+    /// Yeni bir PDF üretim servisi oluşturur.
+    /// </summary>
+    public QuestPdfService(IFileStorage files) => _files = files;
 
     private static byte[] GenerateQrPng(string text)
     {
@@ -357,7 +366,22 @@ public class QuestPdfService : IPdfService
                 for (int idx = 0; idx < entries.Count; idx++)
                 {
                     var e = entries[idx];
-                    RenderReportPage(container, i, e.DayNumber > 0 ? e.DayNumber : idx + 1, e.Date, e.Title, e.Content);
+                    byte[]? imageBytes = null;
+                    if (!string.IsNullOrWhiteSpace(e.ImageStoredFileName))
+                    {
+                        try
+                        {
+                            using var stream = _files.OpenRead(e.ImageStoredFileName);
+                            using var ms = new MemoryStream();
+                            stream.CopyTo(ms);
+                            imageBytes = ms.ToArray();
+                        }
+                        catch
+                        {
+                            // Diskte görsel eksikse PDF üretimi kesintiye uğramasın
+                        }
+                    }
+                    RenderReportPage(container, i, e.DayNumber > 0 ? e.DayNumber : idx + 1, e.Date, e.Title, e.Content, e.IsDraft, imageBytes, e.ImageCaption);
                 }
             }
         });
@@ -873,6 +897,27 @@ public class QuestPdfService : IPdfService
         var companyAddress = string.Join(" / ",
             new[] { i.Company?.Address, i.Company?.City }.Where(s => !string.IsNullOrWhiteSpace(s)));
 
+        CoverPageDataDto? cover = null;
+        if (!string.IsNullOrWhiteSpace(i.CoverPageDataJson))
+        {
+            try
+            {
+                cover = JsonSerializer.Deserialize<CoverPageDataDto>(i.CoverPageDataJson, CoverJsonOpts);
+            }
+            catch
+            {
+                // Bozuk JSON varsa varsayılan veriyi kullan
+            }
+        }
+
+        var nonEmptyAreas = cover?.ActivityAreas?
+            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .Select((a, idx) => $"{idx + 1}. {a.Trim()}")
+            .ToList();
+        var activityText = nonEmptyAreas is { Count: > 0 }
+            ? string.Join("\n", nonEmptyAreas)
+            : (i.Company?.Sector ?? "Yazılım, Bilişim ve Mühendislik Uygulamaları");
+
         container.Page(page =>
         {
             page.Size(PageSizes.A4);
@@ -951,11 +996,14 @@ public class QuestPdfService : IPdfService
                     Form7CellLabel(t, "STAJ YAPILAN BİRİM");
                     Form7CellValue(t, i.Department ?? "Bilgisayar / Yazılım Mühendisliği Birimi");
 
+                    Form7CellLabel(t, "TOPLAM ÇALIŞAN SAYISI");
+                    Form7CellValue(t, string.IsNullOrWhiteSpace(cover?.TotalEmployees) ? "-" : cover!.TotalEmployees!.Trim());
+
                     Form7CellLabel(t, "İŞYERİ FAALİYET ALANLARI");
-                    Form7CellValue(t, i.Company?.Sector ?? "Yazılım, Bilişim ve Mühendislik Uygulamaları");
+                    Form7CellValue(t, activityText);
                 });
 
-                // PERSONEL TANITIMI TABLOSU
+                // PERSONEL TANITIMI TABLOSU (10 SATIR)
                 col.Item().PaddingTop(6).Table(pt =>
                 {
                     pt.ColumnsDefinition(c =>
@@ -976,25 +1024,38 @@ public class QuestPdfService : IPdfService
                             .Padding(4).AlignCenter().AlignMiddle().Text(h).Bold().FontSize(8f);
                     }
 
-                    // 1. Satır: Sorumlu Mühendis / Danışman
-                    pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(5).AlignCenter().Text("1").FontSize(8.5f);
-                    pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(5).Text(i.AdvisorName).Bold().FontSize(8.5f);
-                    pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(5).Text(i.Department ?? "Mühendislik Fakültesi / Bilgisayar Mühendisliği").FontSize(8.5f);
-                    pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(5).Text("İşyeri Staj Sorumlusu / Mühendis").FontSize(8.5f);
-
-                    for (int r = 2; r <= 8; r++)
+                    for (int r = 1; r <= 10; r++)
                     {
-                        pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(5).AlignCenter().Text(r.ToString()).FontSize(8.5f);
-                        pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(5).Text("");
-                        pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(5).Text("");
-                        pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(5).Text("");
+                        var staff = cover?.StaffMembers?.FirstOrDefault(s => s.RowNo == r);
+                        var name = staff?.FullName ?? string.Empty;
+                        var grad = staff?.GraduatedDepartment ?? string.Empty;
+                        var role = staff?.Role ?? string.Empty;
+
+                        if (r == 1 && string.IsNullOrWhiteSpace(name))
+                        {
+                            name = i.AdvisorName;
+                            grad = !string.IsNullOrWhiteSpace(i.AdvisorGraduatedDepartment)
+                                ? i.AdvisorGraduatedDepartment!
+                                : (i.Department ?? "Mühendislik Fakültesi / Bilgisayar Mühendisliği");
+                            role = !string.IsNullOrWhiteSpace(i.AdvisorTitle)
+                                ? i.AdvisorTitle!
+                                : "İşyeri Staj Sorumlusu / Mühendis";
+                        }
+
+                        pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(4.5f).AlignCenter().Text(r.ToString()).FontSize(8.5f);
+                        var nameCell = pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(4.5f).Text(name).FontSize(8.5f);
+                        if (r == 1) nameCell.Bold();
+                        pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(4.5f).Text(grad).FontSize(8.5f);
+                        pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(4.5f).Text(role).FontSize(8.5f);
                     }
                 });
             });
         });
     }
 
-    private static void RenderReportPage(IDocumentContainer container, Internship i, int pageNo, DateOnly date, string title, string content)
+    private static void RenderReportPage(
+        IDocumentContainer container, Internship i, int pageNo, DateOnly date, string title, string content,
+        bool isDraft = false, byte[]? imageBytes = null, string? imageCaption = null)
     {
         container.Page(page =>
         {
@@ -1055,12 +1116,34 @@ public class QuestPdfService : IPdfService
                     r.RelativeItem().Text($"Öğrenci: {i.Student?.FullName} ({i.Student?.StudentNo})").FontSize(9).FontColor(Colors.Grey.Darken2);
                     r.RelativeItem().AlignRight().Text($"Kurum: {i.Company?.Name}").FontSize(9).FontColor(Colors.Grey.Darken2);
                 });
-                if (!string.IsNullOrWhiteSpace(title))
+                if (isDraft || !string.IsNullOrWhiteSpace(title))
                 {
                     col.Item().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).PaddingBottom(4)
-                        .Text($"Konu / Yapılan İş: {title}").Bold().FontSize(10.5f);
+                        .Text(text =>
+                        {
+                            if (!string.IsNullOrWhiteSpace(title))
+                                text.Span($"Konu / Yapılan İş: {title}").Bold().FontSize(10.5f);
+                            if (isDraft)
+                                text.Span(string.IsNullOrWhiteSpace(title) ? "[TASLAK SAYFA]" : "  [TASLAK]").Bold().FontSize(9.5f).FontColor(Colors.Orange.Darken2);
+                        });
                 }
-                col.Item().PaddingTop(4).Text(content).FontSize(10.5f).LineHeight(1.35f);
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    col.Item().PaddingTop(4).Text(content).FontSize(10.5f).LineHeight(1.35f);
+                }
+                if (imageBytes is { Length: > 0 })
+                {
+                    col.Item().PaddingTop(8).Border(0.75f).BorderColor(Colors.Grey.Lighten1)
+                        .Background(Colors.Grey.Lighten5).Padding(6).Column(imgCol =>
+                        {
+                            imgCol.Spacing(4);
+                            imgCol.Item().AlignCenter().MaxHeight(210).Image(imageBytes).FitArea();
+                            if (!string.IsNullOrWhiteSpace(imageCaption))
+                            {
+                                imgCol.Item().AlignCenter().Text(imageCaption).Italic().FontSize(9f).FontColor(Colors.Grey.Darken2);
+                            }
+                        });
+                }
             });
 
             // ALT TABLO (rapor_sayfası.docx Footer Birebir Şablonu)

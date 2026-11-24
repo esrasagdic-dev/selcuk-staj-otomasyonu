@@ -25,11 +25,20 @@ public static class Mapping
     public static AnnouncementDto ToDto(this Announcement a) =>
         new(a.Id, a.Title, a.Content, a.Category, a.IsPinned, a.IsActive, a.CreatedAt);
 
+    /// <summary>Belge sürümünü DTO'ya çevirir.</summary>
+    public static DocumentVersionDto ToDto(this DocumentVersion v) =>
+        new(v.Id, v.VersionNumber, v.OriginalFileName, v.SizeBytes, v.UploadedAt);
+
     /// <summary>Belgeyi DTO'ya çevirir.</summary>
-    public static DocumentDto ToDto(this Document d) => new(d.Id, d.Type, d.OriginalFileName, d.SizeBytes, d.UploadedAt);
+    public static DocumentDto ToDto(this Document d) => new(
+        d.Id, d.Type, d.OriginalFileName, d.SizeBytes, d.UploadedAt,
+        d.Status, d.CommissionFeedback, d.VersionNumber, d.ReviewedAt,
+        d.Versions?.OrderByDescending(v => v.VersionNumber).Select(v => v.ToDto()).ToList());
 
     /// <summary>Defter sayfasını DTO'ya çevirir.</summary>
-    public static LogbookEntryDto ToDto(this LogbookEntry e) => new(e.Id, e.DayNumber, e.Date, e.Title, e.Content, e.UpdatedAt);
+    public static LogbookEntryDto ToDto(this LogbookEntry e) => new(
+        e.Id, e.DayNumber, e.Date, e.Title, e.Content, e.UpdatedAt,
+        e.IsDraft, !string.IsNullOrWhiteSpace(e.ImageStoredFileName), e.ImageOriginalFileName, e.ImageCaption);
 
     /// <summary>Bildirimi DTO'ya çevirir.</summary>
     public static NotificationDto ToDto(this Notification n) => new(n.Id, n.Type, n.Title, n.Message, n.IsRead, n.CreatedAt, n.InternshipId);
@@ -86,7 +95,10 @@ public static class Mapping
         i.AdvisorGraduatedDepartment,
         i.AcademicResult,
         i.AcceptedDaysCount,
-        i.AdvisorApprovedIpAddress);
+        i.AdvisorApprovedIpAddress,
+        i.IsLogbookLocked,
+        i.LogbookLockReason,
+        i.CoverPageDataJson);
 
     /// <summary>Durumu Türkçe metne çevirir (e-posta ve bildirim metinleri için).</summary>
     public static string ToTurkish(this InternshipStatus s) => s switch
@@ -117,4 +129,14 @@ public static class Mapping
 
     /// <summary>Staj türünü Türkçe metne çevirir.</summary>
     public static string ToTurkish(this InternshipType t) => t == InternshipType.Staj1 ? "Staj 1" : "Staj 2";
+
+    /// <summary>Belge inceleme durumunu Türkçe metne çevirir.</summary>
+    public static string ToTurkish(this DocumentStatus s) => s switch
+    {
+        DocumentStatus.Pending => "İnceleme Bekliyor",
+        DocumentStatus.Approved => "Onaylandı",
+        DocumentStatus.RevisionRequested => "Düzeltme İstendi",
+        DocumentStatus.Rejected => "Reddedildi",
+        _ => s.ToString()
+    };
 }

@@ -219,6 +219,21 @@ public class Internship
     public DateTime? AdvisorApprovedAt { get; set; }
 
     /// <summary>
+    /// Sanal staj defterinin düzenlemeye karşı kilitli olup olmadığı.
+    /// </summary>
+    public bool IsLogbookLocked { get; set; }
+
+    /// <summary>
+    /// Sanal staj defterinin kilitlenme gerekçesi.
+    /// </summary>
+    public string? LogbookLockReason { get; set; }
+
+    /// <summary>
+    /// Staj defteri Sayfa 2 (İşyeri ve Personel Tanıtımı - TF-BM-SF-02a) için öğrencinin girdiği JSON verisi.
+    /// </summary>
+    public string? CoverPageDataJson { get; set; }
+
+    /// <summary>
     /// Komisyonun Geçti/Kaldı kararını verdiği tarih.
     /// </summary>
     public DateTime? EvaluatedAt { get; set; }

@@ -11,6 +11,7 @@ import {
   Eye,
   FileX2,
   Filter,
+  Lock,
   Mail,
   Megaphone,
   Play,
@@ -18,6 +19,7 @@ import {
   RotateCcw,
   Send,
   Trash2,
+  Unlock,
   Users,
   XCircle,
 } from 'lucide-react';
@@ -26,6 +28,8 @@ import {
   academicResultLabels,
   api,
   docTypeLabels,
+  documentStatusColors,
+  documentStatusLabels,
   downloadBlob,
   formatDate,
   getErrorMessage,
@@ -37,6 +41,7 @@ import {
   type CommitteeStatsDto,
   type CompanyStatDto,
   type DocumentDto,
+  type DocumentStatus,
   type HolidayDto,
   type InternshipDetailDto,
   type InternshipStatus,
@@ -50,6 +55,7 @@ import {
   type UserRole,
 } from '../api';
 import { DocumentPreviewModal, type PreviewSource } from './DocumentPreviewModal';
+import { AuthImage } from './AuthImage';
 
 interface Props {
   user: UserDto;
@@ -645,6 +651,54 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
       setMsg({
         type: 'ok',
         text: `Staj sonu değerlendirmesi "${academicResultLabels[evalResult]}" (${resolvedDays}/${selected.workDays} gün) olarak kaydedildi.`,
+      });
+      await loadApplications();
+    } catch (err) {
+      setMsg({ type: 'err', text: getErrorMessage(err) });
+    }
+  };
+
+  const handleReviewDocument = async (documentId: string, status: DocumentStatus) => {
+    if (!selected) return;
+    if ((status === 'RevisionRequested' || status === 'Rejected') && !actionNote.trim()) {
+      setMsg({
+        type: 'err',
+        text: 'Belge düzeltme talebi veya reddi için yukarıdaki not kutusuna geri bildirim yazınız.',
+      });
+      return;
+    }
+    setMsg(null);
+    try {
+      await api.post(`/committee/documents/${documentId}/review`, {
+        status,
+        feedback: actionNote.trim() || null,
+      });
+      if (actionNote.trim()) setActionNote('');
+      setMsg({
+        type: 'ok',
+        text: `Belge durumu "${documentStatusLabels[status]}" olarak güncellendi.`,
+      });
+      await loadApplications();
+    } catch (err) {
+      setMsg({ type: 'err', text: getErrorMessage(err) });
+    }
+  };
+
+  const handleToggleLogbookLock = async () => {
+    if (!selected) return;
+    const willLock = !selected.isLogbookLocked;
+    setMsg(null);
+    try {
+      await api.post(`/committee/internships/${selected.id}/logbook-lock`, {
+        locked: willLock,
+        reason: willLock ? actionNote.trim() || 'Komisyon tarafından kilitlendi.' : null,
+      });
+      if (willLock && actionNote.trim()) setActionNote('');
+      setMsg({
+        type: 'ok',
+        text: willLock
+          ? 'Sanal staj defteri kilitlendi.'
+          : 'Sanal staj defteri kilidi açıldı.',
       });
       await loadApplications();
     } catch (err) {
@@ -1426,43 +1480,110 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                   </div>
                 </div>
 
-                {/* Yüklenen Evraklar (Varsayılan davranış: Tarayıcı İçi Modal Önizleme) */}
+                {/* Yüklenen Evraklar (Belge Bazlı İnceleme + Sürüm Geçmişi) */}
                 <div>
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-bold uppercase text-slate-500">
-                      Yüklenen Resmi Evraklar (Tıklayarak Ekranda Önizleyin)
+                      Yüklenen Resmi Evraklar ({selected.documents.length}) — Önizleme, İnceleme & Sürüm Geçmişi
                     </h4>
                   </div>
                   {selected.documents.length === 0 ? (
                     <p className="mt-1 text-xs text-slate-500">Yüklü belge yok.</p>
                   ) : (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {selected.documents.map((d) => (
-                        <div
-                          key={d.id}
-                          className="inline-flex items-center overflow-hidden rounded-lg border border-blue-200 bg-blue-50/60"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => openDocumentPreview(d, selected)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-900 hover:bg-blue-100"
-                            title="Ekranda Büyük Önizle"
+                    <div className="mt-2 space-y-2">
+                      {selected.documents.map((d) => {
+                        const docStatus = d.status ?? 'Pending';
+                        return (
+                          <div
+                            key={d.id}
+                            className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs space-y-2"
                           >
-                            <Eye className="h-3.5 w-3.5 text-blue-700" />
-                            <span>
-                              {docTypeLabels[d.type]} ({d.originalFileName})
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => downloadBlob(`/documents/${d.id}`, d.originalFileName)}
-                            title="Cihaza İndir"
-                            className="border-l border-blue-200 px-2 py-1.5 text-blue-700 hover:bg-blue-200/60"
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="font-bold text-slate-900">
+                                  {docTypeLabels[d.type]}
+                                </span>
+                                <span className="text-slate-600">({d.originalFileName})</span>
+                                <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-extrabold text-slate-800">
+                                  v{d.versionNumber ?? 1}
+                                </span>
+                                <span
+                                  className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                                    documentStatusColors[docStatus]
+                                  }`}
+                                >
+                                  {documentStatusLabels[docStatus]}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => openDocumentPreview(d, selected)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 font-bold text-blue-800 hover:bg-blue-100"
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                  Önizle
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => downloadBlob(`/documents/${d.id}`, d.originalFileName)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 font-semibold text-slate-700 hover:bg-slate-100"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                  İndir
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReviewDocument(d.id, 'Approved')}
+                                  className="rounded-lg bg-emerald-600 px-2.5 py-1 font-bold text-white hover:bg-emerald-700"
+                                >
+                                  Onayla
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReviewDocument(d.id, 'RevisionRequested')}
+                                  className="rounded-lg bg-amber-600 px-2.5 py-1 font-bold text-white hover:bg-amber-700"
+                                >
+                                  Düzeltme İste
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReviewDocument(d.id, 'Rejected')}
+                                  className="rounded-lg bg-rose-600 px-2.5 py-1 font-bold text-white hover:bg-rose-700"
+                                >
+                                  Reddet
+                                </button>
+                              </div>
+                            </div>
+
+                            {d.commissionFeedback && (
+                              <div className="rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-[11px] font-semibold text-orange-900">
+                                Komisyon Geri Bildirimi: {d.commissionFeedback}
+                              </div>
+                            )}
+
+                            {d.versions && d.versions.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-200 pt-1.5 text-[11px]">
+                                <span className="font-semibold text-slate-500">Önceki Sürümler:</span>
+                                {d.versions.map((v) => (
+                                  <button
+                                    key={v.id}
+                                    type="button"
+                                    onClick={() =>
+                                      downloadBlob(`/document-versions/${v.id}`, v.originalFileName)
+                                    }
+                                    className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 font-medium text-slate-700 hover:bg-slate-100"
+                                  >
+                                    <Download className="h-3 w-3 text-slate-500" />
+                                    v{v.versionNumber} ({v.originalFileName})
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1552,10 +1673,10 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                     </span>
                   </div>
 
-                  {logbook.length < selected.workDays &&
+                  {logbook.filter((e) => !e.isDraft).length < selected.workDays &&
                     (selected.status === 'CompletedPendingReview' || selected.status === 'InProgress') && (
                       <div className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs font-semibold text-amber-900">
-                        ⚠️ Eksik Deftere Onay Verilemez: Öğrenci {selected.workDays} iş gününün tamamını doldurmadan ({logbook.length}/{selected.workDays} gün) staj başarılı sayılamaz.
+                        ⚠️ Eksik Deftere Tam Başarılı Onayı Verilemez: Öğrenci {selected.workDays} iş gününün tamamını tamamlamalıdır (Tamamlanan: {logbook.filter((e) => !e.isDraft).length}/{selected.workDays} gün).
                       </div>
                     )}
 
@@ -1675,7 +1796,10 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                         <button
                           type="button"
                           onClick={handleEvaluate}
-                          disabled={evalResult === 'Successful' && logbook.length < selected.workDays}
+                          disabled={
+                            evalResult === 'Successful' &&
+                            logbook.filter((e) => !e.isDraft).length < selected.workDays
+                          }
                           className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50 ${
                             evalResult === 'Unsuccessful'
                               ? 'bg-rose-600 hover:bg-rose-700'
@@ -1772,24 +1896,75 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                   )}
                 </div>
 
-                {/* Sanal Defter Özeti */}
+                {/* Sanal Defter Özeti + Defter Kilidi */}
                 <div>
-                  <h4 className="text-xs font-bold uppercase text-slate-500">
-                    Sanal Staj Defteri Sayfaları ({logbook.length} / {selected.workDays} Gün)
-                  </h4>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="text-xs font-bold uppercase text-slate-500">
+                        Sanal Staj Defteri Sayfaları ({logbook.filter((e) => !e.isDraft).length} Tamamlanan / {selected.workDays} Gün)
+                      </h4>
+                      {selected.isLogbookLocked && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-50 px-2.5 py-0.5 text-[11px] font-bold text-rose-800">
+                          <Lock className="h-3 w-3" />
+                          Defter Kilitli{selected.logbookLockReason ? ` — ${selected.logbookLockReason}` : ''}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleToggleLogbookLock}
+                      className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1 text-xs font-bold transition ${
+                        selected.isLogbookLocked
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                          : 'border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100'
+                      }`}
+                    >
+                      {selected.isLogbookLocked ? (
+                        <>
+                          <Unlock className="h-3.5 w-3.5" />
+                          Defter Kilidini Aç
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="h-3.5 w-3.5" />
+                          Defteri Kilitle
+                        </>
+                      )}
+                    </button>
+                  </div>
                   {logbook.length === 0 ? (
                     <p className="mt-2 text-xs text-slate-500">Henüz defter sayfası girilmemiş.</p>
                   ) : (
-                    <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">
+                    <div className="mt-2 max-h-80 space-y-2 overflow-y-auto pr-1">
                       {logbook.map((e) => (
-                        <div key={e.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
-                          <div className="flex justify-between font-bold text-slate-900">
-                            <span>
-                              {e.dayNumber}. İş Günü — {e.title}
-                            </span>
+                        <div key={e.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs space-y-2">
+                          <div className="flex items-center justify-between gap-2 font-bold text-slate-900">
+                            <div className="flex items-center gap-2">
+                              <span>
+                                {e.dayNumber}. İş Günü — {e.title}
+                              </span>
+                              {e.isDraft && (
+                                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-900 border border-amber-300">
+                                  TASLAK
+                                </span>
+                              )}
+                            </div>
                             <span className="text-slate-500">{formatDate(e.date)}</span>
                           </div>
-                          <p className="mt-1 text-slate-700">{e.content}</p>
+                          <p className="text-slate-700">{e.content}</p>
+                          {e.hasImage && (
+                            <div className="rounded-lg border border-slate-200 bg-white p-2">
+                              <AuthImage
+                                src={`/internships/${selected.id}/logbook/${e.id}/image`}
+                                alt={e.imageCaption || `${e.dayNumber}. Gün Çalışma Görseli`}
+                                cacheKey={e.updatedAt}
+                                className="max-h-48 w-auto rounded object-contain"
+                              />
+                              {e.imageCaption && (
+                                <p className="mt-1 text-[11px] italic text-slate-600">{e.imageCaption}</p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -2080,14 +2255,34 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                     ) : (
                       <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">
                         {archiveLogbook.map((e) => (
-                          <div key={e.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
-                            <div className="flex justify-between font-bold text-slate-900">
-                              <span>
-                                {e.dayNumber}. İş Günü — {e.title}
-                              </span>
+                          <div key={e.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs space-y-2">
+                            <div className="flex items-center justify-between gap-2 font-bold text-slate-900">
+                              <div className="flex items-center gap-2">
+                                <span>
+                                  {e.dayNumber}. İş Günü — {e.title}
+                                </span>
+                                {e.isDraft && (
+                                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-900 border border-amber-300">
+                                    TASLAK
+                                  </span>
+                                )}
+                              </div>
                               <span className="text-slate-500">{formatDate(e.date)}</span>
                             </div>
-                            <p className="mt-1 text-slate-700">{e.content}</p>
+                            <p className="text-slate-700">{e.content}</p>
+                            {e.hasImage && (
+                              <div className="rounded-lg border border-slate-200 bg-white p-2">
+                                <AuthImage
+                                  src={`/internships/${archiveSelected.id}/logbook/${e.id}/image`}
+                                  alt={e.imageCaption || `${e.dayNumber}. Gün Çalışma Görseli`}
+                                  cacheKey={e.updatedAt}
+                                  className="max-h-48 w-auto rounded object-contain"
+                                />
+                                {e.imageCaption && (
+                                  <p className="mt-1 text-[11px] italic text-slate-600">{e.imageCaption}</p>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

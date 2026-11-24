@@ -49,12 +49,15 @@ public class AdvisorService
             throw AppException.Forbidden();
         if (i.Status is not (InternshipStatus.ApprovedByCommittee or InternshipStatus.InsuranceStarted or InternshipStatus.InProgress or InternshipStatus.CompletedPendingReview))
             throw AppException.BadRequest("Defter onayı yalnızca aktif veya tamamlanmış staj sürecinde verilebilir.");
-        if (i.LogbookEntries.Count < i.WorkDays)
-            throw AppException.BadRequest($"Eksik staj defterine onay açılamaz! Öğrenci {i.WorkDays} iş gününün tamamını doldurmalıdır (Mevcut: {i.LogbookEntries.Count} / {i.WorkDays} gün).");
+        var completedCount = i.LogbookEntries.Count(e => !e.IsDraft);
+        if (completedCount < i.WorkDays)
+            throw AppException.BadRequest($"Eksik staj defterine onay açılamaz! Öğrenci {i.WorkDays} iş gününün tamamını taslaktan çıkarıp tamamlamalıdır (Tamamlanan: {completedCount} / {i.WorkDays} gün).");
 
         i.AdvisorLogbookApproved = true;
         i.AdvisorApprovedAt = DateTime.UtcNow;
         i.AdvisorApprovedIpAddress = string.IsNullOrWhiteSpace(ipAddress) ? null : ipAddress.Trim();
+        i.IsLogbookLocked = true;
+        i.LogbookLockReason = $"Sorumlu mühendis ({i.AdvisorName}) tarafından {DateTime.Now:dd.MM.yyyy HH:mm} tarihinde onaylanarak kilitlendi.";
         i.LogbookRevisionRequested = false;
         i.LogbookRevisionNote = null;
         i.AdvisorEmailStatus = $"Sorumlu mühendis ({i.AdvisorName}) staj defterini inceledi ve onayladı ({DateTime.Now:dd.MM.yyyy HH:mm}).";
@@ -79,6 +82,8 @@ public class AdvisorService
 
         i.AdvisorLogbookApproved = false;
         i.AdvisorApprovedAt = null;
+        i.IsLogbookLocked = false;
+        i.LogbookLockReason = null;
         i.LogbookSubmittedToAdvisorAt = null;
         i.LogbookRevisionRequested = true;
         i.LogbookRevisionNote = note.Trim();

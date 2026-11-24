@@ -23,6 +23,7 @@ import {
   type LogbookEntryDto,
 } from '../api';
 import { DocumentPreviewModal, type PreviewSource } from './DocumentPreviewModal';
+import { AuthImage } from './AuthImage';
 
 export const AdvisorPanel: React.FC = () => {
   const [interns, setInterns] = useState<InternshipSummaryDto[]>([]);
@@ -134,7 +135,8 @@ export const AdvisorPanel: React.FC = () => {
     }
   };
 
-  const isLogbookComplete = selected ? logbook.length >= selected.workDays : false;
+  const completedLogbookCount = logbook.filter((e) => !e.isDraft).length;
+  const isLogbookComplete = selected ? completedLogbookCount >= selected.workDays : false;
 
   return (
     <div className="space-y-6">
@@ -314,7 +316,10 @@ export const AdvisorPanel: React.FC = () => {
                             : 'bg-amber-100 text-amber-800'
                         }`}
                       >
-                        {logbook.length} / {selected.workDays} Gün Dolu
+                        {logbook.filter((e) => !e.isDraft).length} / {selected.workDays} Tamamlandı
+                        {logbook.some((e) => e.isDraft)
+                          ? ` (+${logbook.filter((e) => e.isDraft).length} Taslak)`
+                          : ''}
                       </span>
                     </div>
 
@@ -468,10 +473,17 @@ export const AdvisorPanel: React.FC = () => {
                         key={entry.id}
                         className="rounded-xl border border-slate-200 bg-slate-50/60 p-4"
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-indigo-900">
-                            {entry.dayNumber}. İş Günü — {entry.title}
-                          </span>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-indigo-900">
+                              {entry.dayNumber}. İş Günü — {entry.title}
+                            </span>
+                            {entry.isDraft && (
+                              <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold text-amber-900 border border-amber-300">
+                                TASLAK
+                              </span>
+                            )}
+                          </div>
                           <span className="rounded-md bg-white px-2.5 py-0.5 text-xs font-medium text-slate-600 border border-slate-200">
                             {formatDate(entry.date)}
                           </span>
@@ -479,6 +491,21 @@ export const AdvisorPanel: React.FC = () => {
                         <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
                           {entry.content}
                         </p>
+                        {entry.hasImage && (
+                          <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2.5">
+                            <AuthImage
+                              src={`/internships/${selected.id}/logbook/${entry.id}/image`}
+                              alt={entry.imageCaption || `${entry.dayNumber}. Gün Çalışma Görseli`}
+                              cacheKey={entry.updatedAt}
+                              className="max-h-60 w-auto rounded object-contain"
+                            />
+                            {entry.imageCaption && (
+                              <p className="mt-1.5 text-xs italic text-slate-600">
+                                {entry.imageCaption}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

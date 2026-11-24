@@ -17,6 +17,7 @@ import {
   FileText,
   FileX2,
   FolderCheck,
+  Image as ImageIcon,
   Lock,
   Mail,
   Megaphone,
@@ -34,6 +35,8 @@ import {
   academicResultLabels,
   api,
   docTypeLabels,
+  documentStatusColors,
+  documentStatusLabels,
   downloadBlob,
   formatDate,
   getErrorMessage,
@@ -41,6 +44,8 @@ import {
   statusLabels,
   type AnnouncementDto,
   type CompanyDto,
+  type CoverPageDataDto,
+  type CoverStaffMemberDto,
   type DocumentType,
   type EndDateResponse,
   type InternshipDetailDto,
@@ -52,6 +57,7 @@ import {
   type UserDto,
 } from '../api';
 import { DocumentPreviewModal, type PreviewSource } from './DocumentPreviewModal';
+import { AuthImage } from './AuthImage';
 
 interface Props {
   user: UserDto;
@@ -119,6 +125,22 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
   const [logDate, setLogDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [logTitle, setLogTitle] = useState('');
   const [logContent, setLogContent] = useState('');
+  const [imageCaption, setImageCaption] = useState('');
+  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Sayfa 2 (TF-BM-SF-02a) Düzenlenebilir İşyeri & Personel Tanıtımı
+  const [coverTotalEmployees, setCoverTotalEmployees] = useState('');
+  const [coverActivityAreas, setCoverActivityAreas] = useState<string[]>(['', '', '', '', '']);
+  const [coverStaff, setCoverStaff] = useState<CoverStaffMemberDto[]>(
+    Array.from({ length: 10 }, (_, idx) => ({
+      rowNo: idx + 1,
+      fullName: '',
+      graduatedDepartment: '',
+      role: '',
+    }))
+  );
+  const [savingCover, setSavingCover] = useState(false);
 
   // İzin / Rapor Formu
   const [leaveType, setLeaveType] = useState<LeaveType>('MedicalReport');
@@ -197,6 +219,8 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
     setLogDate(entry.date.split('T')[0]);
     setLogTitle(entry.title);
     setLogContent(entry.content);
+    setImageCaption(entry.imageCaption ?? '');
+    setPendingImageFile(null);
   };
 
   const openBlankNewPage = (entriesList: LogbookEntryDto[] = logbook) => {
@@ -226,7 +250,48 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
     );
     setLogTitle('');
     setLogContent('');
+    setImageCaption('');
+    setPendingImageFile(null);
   };
+
+  useEffect(() => {
+    if (!selected) return;
+    let parsed: CoverPageDataDto | null = null;
+    if (selected.coverPageDataJson) {
+      try {
+        parsed = JSON.parse(selected.coverPageDataJson) as CoverPageDataDto;
+      } catch {
+        parsed = null;
+      }
+    }
+    setCoverTotalEmployees(parsed?.totalEmployees ?? '');
+    setCoverActivityAreas(
+      Array.from({ length: 5 }, (_, idx) => parsed?.activityAreas?.[idx] ?? '')
+    );
+    setCoverStaff(
+      Array.from({ length: 10 }, (_, idx) => {
+        const existing =
+          parsed?.staffMembers?.find((s) => s.rowNo === idx + 1) ?? parsed?.staffMembers?.[idx];
+        if (existing) {
+          return {
+            rowNo: idx + 1,
+            fullName: existing.fullName ?? '',
+            graduatedDepartment: existing.graduatedDepartment ?? '',
+            role: existing.role ?? '',
+          };
+        }
+        if (idx === 0) {
+          return {
+            rowNo: 1,
+            fullName: selected.advisorName ?? '',
+            graduatedDepartment: selected.advisorGraduatedDepartment || selected.department || '',
+            role: selected.advisorTitle || 'Sorumlu Mühendis / Staj Danışmanı',
+          };
+        }
+        return { rowNo: idx + 1, fullName: '', graduatedDepartment: '', role: '' };
+      })
+    );
+  }, [selected?.id, selected?.coverPageDataJson]);
 
   useEffect(() => {
     if (selected) {
@@ -411,8 +476,7 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
     }
   };
 
-  const handleSaveLogbook = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const saveLogbookPage = async (isDraft: boolean) => {
     if (!selected) return;
     if (pageNumber < 1 || pageNumber > selected.workDays) {
       setMsg({
@@ -429,10 +493,23 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
         date: logDate,
         title: logTitle,
         content: logContent,
+        isDraft,
+        imageCaption: imageCaption.trim() || null,
       });
+
+      if (!activeEntryId && pendingImageFile) {
+        const fd = new FormData();
+        fd.append('file', pendingImageFile);
+        if (imageCaption.trim()) fd.append('caption', imageCaption.trim());
+        await api.post(`/internships/${selected.id}/logbook/${saved.data.id}/image`, fd);
+        setPendingImageFile(null);
+      }
+
       setMsg({
         type: 'ok',
-        text: activeEntryId
+        text: isDraft
+          ? `${saved.data.dayNumber}. sayfa TASLAK olarak kaydedildi.`
+          : activeEntryId
           ? `${saved.data.dayNumber}. sayfa staj raporu güncellendi.`
           : `${saved.data.dayNumber}. sayfa staj raporu kaydedildi.`,
       });
@@ -443,6 +520,80 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
       await loadAll();
     } catch (err) {
       setMsg({ type: 'err', text: getErrorMessage(err) });
+    }
+  };
+
+  const handleSaveLogbook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveLogbookPage(false);
+  };
+
+  const handleUploadLogbookImage = async (file?: File) => {
+    if (!file || !selected) return;
+    if (!activeEntryId) {
+      setPendingImageFile(file);
+      setMsg({
+        type: 'ok',
+        text: `Görsel (${file.name}) hazırlandı — sayfayı kaydettiğinizde otomatik yüklenecektir.`,
+      });
+      return;
+    }
+    setUploadingImage(true);
+    setMsg(null);
+    const fd = new FormData();
+    fd.append('file', file);
+    if (imageCaption.trim()) fd.append('caption', imageCaption.trim());
+    try {
+      await api.post<LogbookEntryDto>(
+        `/internships/${selected.id}/logbook/${activeEntryId}/image`,
+        fd
+      );
+      const { data } = await api.get<LogbookEntryDto[]>(`/internships/${selected.id}/logbook`);
+      setLogbook(data);
+      const found = data.find((x) => x.id === activeEntryId);
+      if (found) selectEntryForEdit(found);
+      setMsg({ type: 'ok', text: 'Günlük çalışma görseli sayfaya eklendi.' });
+    } catch (err) {
+      setMsg({ type: 'err', text: getErrorMessage(err) });
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleDeleteLogbookImage = async () => {
+    if (!selected || !activeEntryId) return;
+    setMsg(null);
+    try {
+      await api.delete(`/internships/${selected.id}/logbook/${activeEntryId}/image`);
+      const { data } = await api.get<LogbookEntryDto[]>(`/internships/${selected.id}/logbook`);
+      setLogbook(data);
+      const found = data.find((x) => x.id === activeEntryId);
+      if (found) selectEntryForEdit(found);
+      setMsg({ type: 'ok', text: 'Sayfa görseli silindi.' });
+    } catch (err) {
+      setMsg({ type: 'err', text: getErrorMessage(err) });
+    }
+  };
+
+  const handleSaveCoverPage = async () => {
+    if (!selected) return;
+    setSavingCover(true);
+    setMsg(null);
+    try {
+      await api.put(`/internships/${selected.id}/cover-page`, {
+        totalEmployees: coverTotalEmployees.trim() || null,
+        activityAreas: coverActivityAreas,
+        staffMembers: coverStaff,
+      });
+      await loadAll();
+      setMsg({
+        type: 'ok',
+        text: 'İşyeri ve Personel Tanıtım Sayfası (Sayfa 2 — TF-BM-SF-02a) kaydedildi; PDF çıktısına yansıtılacaktır.',
+      });
+    } catch (err) {
+      setMsg({ type: 'err', text: getErrorMessage(err) });
+    } finally {
+      setSavingCover(false);
     }
   };
 
@@ -616,8 +767,14 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
   const currentEntryIndex = activeEntryId
     ? logbook.findIndex((x) => x.id === activeEntryId)
     : -1;
+  const activeEntry = activeEntryId ? logbook.find((x) => x.id === activeEntryId) ?? null : null;
 
-  const isLogbookComplete = selected ? logbook.length >= selected.workDays : false;
+  const isLogbookReadOnly = selected
+    ? selected.advisorLogbookApproved || !!selected.isLogbookLocked
+    : false;
+  const completedLogbookCount = logbook.filter((e) => !e.isDraft).length;
+  const draftLogbookCount = logbook.filter((e) => e.isDraft).length;
+  const isLogbookComplete = selected ? completedLogbookCount >= selected.workDays : false;
 
   // Madde 14: Staj bitimine 1 hafta kala uyarısı kontrolü
   const isEndingWithinOneWeek = (() => {
@@ -2015,14 +2172,14 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                           </p>
                           <p className="text-slate-600">
                             {isLogbookComplete
-                              ? `✔ Tüm iş günlerini (${logbook.length}/${selected.workDays} gün) tamamladınız! Şimdi defterinizi sorumlu mühendisin onayına gönderebilirsiniz.`
-                              : `⚠️ Eksik deftere onay açılmaz: Defteri sorumlu mühendise gönderebilmek için ${selected.workDays} iş gününün tamamını doldurmalısınız (Mevcut: ${logbook.length}/${selected.workDays} gün).`}
+                              ? `✔ Tüm iş günlerini (${completedLogbookCount}/${selected.workDays} gün) tamamladınız! Şimdi defterinizi sorumlu mühendisin onayına gönderebilirsiniz.`
+                              : `⚠️ Eksik deftere onay açılmaz: Defteri sorumlu mühendise gönderebilmek için ${selected.workDays} iş gününün tamamını 'Tamamlandı' olarak kaydetmelisiniz (Tamamlanan: ${completedLogbookCount}/${selected.workDays} gün${draftLogbookCount > 0 ? `, Taslak: ${draftLogbookCount}` : ''}).`}
                           </p>
                         </div>
                         <button
                           type="button"
                           onClick={handleSubmitLogbookToAdvisor}
-                          disabled={!isLogbookComplete}
+                          disabled={!isLogbookComplete || !!selected.isLogbookLocked}
                           className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Send className="h-4 w-4" />
@@ -2167,62 +2324,97 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                           </p>
                         ) : (
                           <div className="mt-2 divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
-                            {selected.documents.map((doc) => (
-                              <div
-                                key={doc.id}
-                                className="flex items-center justify-between px-4 py-2.5 text-xs"
-                              >
-                                <div>
-                                  <span className="font-bold text-slate-800">
-                                    {docTypeLabels[doc.type]}:{' '}
-                                  </span>
-                                  <span className="text-slate-600">{doc.originalFileName}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setPreviewModal({
-                                        title: `${docTypeLabels[doc.type]} Önizleme`,
-                                        subtitle: `${user.fullName} (${verifiedStudentNo}) — ${selected.companyName}`,
-                                        sources: [
-                                          {
-                                            label: docTypeLabels[doc.type],
-                                            url: `/documents/${doc.id}`,
-                                            fallbackFileName: doc.originalFileName,
-                                          },
-                                        ],
-                                        initialIndex: 0,
-                                      })
-                                    }
-                                    className="flex items-center gap-1 rounded-md bg-indigo-50 px-2.5 py-1 font-semibold text-indigo-700 hover:bg-indigo-100"
-                                  >
-                                    <Eye className="h-3.5 w-3.5" />
-                                    Önizle
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      downloadBlob(`/documents/${doc.id}`, doc.originalFileName)
-                                    }
-                                    className="flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 font-semibold text-blue-700 hover:bg-blue-100"
-                                  >
-                                    <Download className="h-3.5 w-3.5" />
-                                    İndir
-                                  </button>
-                                  {(selected.status === 'Draft' ||
-                                    selected.status === 'RevisionRequested') && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteDoc(doc.id)}
-                                      className="rounded-md bg-rose-50 p-1 text-rose-600 hover:bg-rose-100"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </button>
+                            {selected.documents.map((doc) => {
+                              const dStatus = doc.status ?? 'Pending';
+                              return (
+                                <div key={doc.id} className="px-4 py-2.5 text-xs space-y-1.5">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="font-bold text-slate-800">
+                                        {docTypeLabels[doc.type]}:
+                                      </span>
+                                      <span className="text-slate-600">{doc.originalFileName}</span>
+                                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-extrabold text-slate-700">
+                                        v{doc.versionNumber ?? 1}
+                                      </span>
+                                      <span
+                                        className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                                          documentStatusColors[dStatus]
+                                        }`}
+                                      >
+                                        {documentStatusLabels[dStatus]}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setPreviewModal({
+                                            title: `${docTypeLabels[doc.type]} Önizleme`,
+                                            subtitle: `${user.fullName} (${verifiedStudentNo}) — ${selected.companyName}`,
+                                            sources: [
+                                              {
+                                                label: docTypeLabels[doc.type],
+                                                url: `/documents/${doc.id}`,
+                                                fallbackFileName: doc.originalFileName,
+                                              },
+                                            ],
+                                            initialIndex: 0,
+                                          })
+                                        }
+                                        className="flex items-center gap-1 rounded-md bg-indigo-50 px-2.5 py-1 font-semibold text-indigo-700 hover:bg-indigo-100"
+                                      >
+                                        <Eye className="h-3.5 w-3.5" />
+                                        Önizle
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          downloadBlob(`/documents/${doc.id}`, doc.originalFileName)
+                                        }
+                                        className="flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 font-semibold text-blue-700 hover:bg-blue-100"
+                                      >
+                                        <Download className="h-3.5 w-3.5" />
+                                        İndir
+                                      </button>
+                                      {(selected.status === 'Draft' ||
+                                        selected.status === 'RevisionRequested') && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteDoc(doc.id)}
+                                          className="rounded-md bg-rose-50 p-1 text-rose-600 hover:bg-rose-100"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {doc.commissionFeedback && (
+                                    <p className="rounded bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-900 border border-orange-200">
+                                      Komisyon Notu: {doc.commissionFeedback}
+                                    </p>
+                                  )}
+                                  {doc.versions && doc.versions.length > 0 && (
+                                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                                      <span>Önceki Sürümler:</span>
+                                      {doc.versions.map((v) => (
+                                        <button
+                                          key={v.id}
+                                          type="button"
+                                          onClick={() =>
+                                            downloadBlob(`/document-versions/${v.id}`, v.originalFileName)
+                                          }
+                                          className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-700 hover:bg-slate-100"
+                                        >
+                                          <Download className="h-3 w-3" />
+                                          v{v.versionNumber} ({v.originalFileName})
+                                        </button>
+                                      ))}
+                                    </div>
                                   )}
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -2533,60 +2725,95 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                       <p className="mt-2 text-xs text-slate-500">Henüz belge yüklenmedi.</p>
                     ) : (
                       <div className="mt-2 divide-y divide-slate-200 rounded-xl border border-slate-200">
-                        {selected.documents.map((doc) => (
-                          <div
-                            key={doc.id}
-                            className="flex items-center justify-between px-4 py-2.5 text-xs"
-                          >
-                            <div>
-                              <span className="font-bold text-slate-800">
-                                {docTypeLabels[doc.type]}:{' '}
-                              </span>
-                              <span className="text-slate-600">{doc.originalFileName}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setPreviewModal({
-                                    title: `${docTypeLabels[doc.type]} Önizleme`,
-                                    subtitle: `${user.fullName} (${verifiedStudentNo}) — ${selected.companyName}`,
-                                    sources: [
-                                      {
-                                        label: docTypeLabels[doc.type],
-                                        url: `/documents/${doc.id}`,
-                                        fallbackFileName: doc.originalFileName,
-                                      },
-                                    ],
-                                    initialIndex: 0,
-                                  })
-                                }
-                                className="flex items-center gap-1 rounded-md bg-indigo-50 px-2.5 py-1 font-semibold text-indigo-700 hover:bg-indigo-100"
-                              >
-                                <Eye className="h-3.5 w-3.5" />
-                                Önizle
-                              </button>
-                              <button
-                                onClick={() =>
-                                  downloadBlob(`/documents/${doc.id}`, doc.originalFileName)
-                                }
-                                className="flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 font-semibold text-blue-700 hover:bg-blue-100"
-                              >
-                                <Download className="h-3.5 w-3.5" />
-                                İndir
-                              </button>
-                              {(selected.status === 'Draft' ||
-                                selected.status === 'RevisionRequested') && (
-                                <button
-                                  onClick={() => handleDeleteDoc(doc.id)}
-                                  className="rounded-md bg-rose-50 p-1 text-rose-600 hover:bg-rose-100"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
+                        {selected.documents.map((doc) => {
+                          const dStatus = doc.status ?? 'Pending';
+                          return (
+                            <div key={doc.id} className="px-4 py-2.5 text-xs space-y-1.5">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="font-bold text-slate-800">
+                                    {docTypeLabels[doc.type]}:
+                                  </span>
+                                  <span className="text-slate-600">{doc.originalFileName}</span>
+                                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-extrabold text-slate-700">
+                                    v{doc.versionNumber ?? 1}
+                                  </span>
+                                  <span
+                                    className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                                      documentStatusColors[dStatus]
+                                    }`}
+                                  >
+                                    {documentStatusLabels[dStatus]}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setPreviewModal({
+                                        title: `${docTypeLabels[doc.type]} Önizleme`,
+                                        subtitle: `${user.fullName} (${verifiedStudentNo}) — ${selected.companyName}`,
+                                        sources: [
+                                          {
+                                            label: docTypeLabels[doc.type],
+                                            url: `/documents/${doc.id}`,
+                                            fallbackFileName: doc.originalFileName,
+                                          },
+                                        ],
+                                        initialIndex: 0,
+                                      })
+                                    }
+                                    className="flex items-center gap-1 rounded-md bg-indigo-50 px-2.5 py-1 font-semibold text-indigo-700 hover:bg-indigo-100"
+                                  >
+                                    <Eye className="h-3.5 w-3.5" />
+                                    Önizle
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      downloadBlob(`/documents/${doc.id}`, doc.originalFileName)
+                                    }
+                                    className="flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 font-semibold text-blue-700 hover:bg-blue-100"
+                                  >
+                                    <Download className="h-3.5 w-3.5" />
+                                    İndir
+                                  </button>
+                                  {(selected.status === 'Draft' ||
+                                    selected.status === 'RevisionRequested') && (
+                                    <button
+                                      onClick={() => handleDeleteDoc(doc.id)}
+                                      className="rounded-md bg-rose-50 p-1 text-rose-600 hover:bg-rose-100"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              {doc.commissionFeedback && (
+                                <p className="rounded bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-900 border border-orange-200">
+                                  Komisyon Notu: {doc.commissionFeedback}
+                                </p>
+                              )}
+                              {doc.versions && doc.versions.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                                  <span>Önceki Sürümler:</span>
+                                  {doc.versions.map((v) => (
+                                    <button
+                                      key={v.id}
+                                      type="button"
+                                      onClick={() =>
+                                        downloadBlob(`/document-versions/${v.id}`, v.originalFileName)
+                                      }
+                                      className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-700 hover:bg-slate-100"
+                                    >
+                                      <Download className="h-3 w-3" />
+                                      v{v.versionNumber} ({v.originalFileName})
+                                    </button>
+                                  ))}
+                                </div>
                               )}
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -2627,7 +2854,8 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                         Word Staj Defteri Düzenleyici (rapor__kapak.docx + rapor_sayfası.docx)
                       </h3>
                       <p className="text-xs text-slate-500">
-                        Doldurulan Gün: <b>{logbook.length} / {selected.workDays} İş Günü</b> • Sorumlu Mühendis:{' '}
+                        Tamamlanan Gün: <b>{completedLogbookCount} / {selected.workDays} İş Günü</b>
+                        {draftLogbookCount > 0 ? ` • Taslak: ${draftLogbookCount}` : ''} • Sorumlu Mühendis:{' '}
                         <b>{selected.advisorName}</b>
                       </p>
                     </div>
@@ -2670,7 +2898,7 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                     </button>
 
                     {/* Madde 6 & 16: Staj Defteri Dolduğunda Sorumlu Mühendise Gönderen Buton */}
-                    {!selected.advisorLogbookApproved && (
+                    {!isLogbookReadOnly && (
                       <button
                         type="button"
                         onClick={handleSubmitLogbookToAdvisor}
@@ -2678,18 +2906,29 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                         title={
                           isLogbookComplete
                             ? 'Tamamlanan staj defterini sorumlu mühendise gönder'
-                            : `Tüm iş günleri (${selected.workDays} gün) dolmadan gönderilemez`
+                            : `Tüm iş günleri (${selected.workDays} gün) taslaktan çıkarılıp tamamlanmadan gönderilemez`
                         }
                         className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Send className="h-4 w-4" />
                         {isLogbookComplete
                           ? 'Staj Defterini Sorumlu Mühendise Gönder'
-                          : `Mühendise Gönder (${logbook.length}/${selected.workDays} Gün)`}
+                          : `Mühendise Gönder (${completedLogbookCount}/${selected.workDays} Gün)`}
                       </button>
                     )}
                   </div>
                 </div>
+
+                {/* Defter Kilit Uyarısı */}
+                {selected.isLogbookLocked && (
+                  <div className="flex items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 p-3.5 text-xs font-semibold text-rose-900">
+                    <Lock className="h-4 w-4 shrink-0 text-rose-600" />
+                    <span>
+                      <b>Staj Defteri Kilitli:</b>{' '}
+                      {selected.logbookLockReason || 'Staj defteri düzenlemeye kapatılmıştır.'}
+                    </span>
+                  </div>
+                )}
 
                 {/* Madde 15: Danışman Revize Uyarısı (Defter İçinde) */}
                 {selected.logbookRevisionRequested && (
@@ -2714,7 +2953,7 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                         <button
                           type="button"
                           onClick={() => openBlankNewPage(logbook)}
-                          disabled={selected.advisorLogbookApproved || logbook.length >= selected.workDays}
+                          disabled={isLogbookReadOnly || logbook.length >= selected.workDays}
                           className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <FilePlus2 className="h-4 w-4" />
@@ -2777,20 +3016,30 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                                 }`}
                               >
                                 <div className="min-w-0 flex-1 pr-2">
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex flex-wrap items-center gap-1.5">
                                     <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-md bg-blue-800 px-1.5 text-[11px] font-extrabold text-white">
                                       {entry.dayNumber || idx + 1}. Gün
                                     </span>
                                     <span className="truncate font-bold text-slate-900">
                                       {entry.title || `${entry.dayNumber}. Gün Staj Raporu`}
                                     </span>
+                                    {entry.isDraft && (
+                                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-extrabold text-amber-900 border border-amber-300">
+                                        TASLAK
+                                      </span>
+                                    )}
+                                    {entry.hasImage && (
+                                      <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-extrabold text-indigo-800 border border-indigo-200">
+                                        Görsel
+                                      </span>
+                                    )}
                                   </div>
                                   <p className="mt-1 truncate text-[11px] text-slate-500">
                                     Tarih: {formatDate(entry.date)} • {entry.content.slice(0, 40)}...
                                   </p>
                                 </div>
 
-                                {!selected.advisorLogbookApproved && (
+                                {!isLogbookReadOnly && (
                                   <button
                                     type="button"
                                     title="Sayfayı Sil"
@@ -2874,7 +3123,7 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                     ) : wordViewMode === 'intro' ? (
                       /* WORD İŞYERİ VE PERSONEL TANITIM SAYFASI (rapor__kapak.docx Sayfa 2 - TF-BM-SF-02a) */
                       <div className="space-y-4">
-                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-xs">
                           <button
                             type="button"
                             onClick={() => setWordViewMode('cover')}
@@ -2886,17 +3135,30 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                           <span className="text-xs font-extrabold text-blue-900">
                             🏢 Word Görünümü: İşyeri ve Personel Tanıtımı (TF-BM-SF-02a)
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (logbook.length > 0) selectEntryForEdit(logbook[0]);
-                              else openBlankNewPage([]);
-                            }}
-                            className="flex items-center gap-1 rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-800"
-                          >
-                            1. Gün Rapor Sayfasına Geç
-                            <ChevronRight className="h-4 w-4" />
-                          </button>
+                          <div className="flex items-center gap-2">
+                            {!isLogbookReadOnly && (
+                              <button
+                                type="button"
+                                onClick={handleSaveCoverPage}
+                                disabled={savingCover}
+                                className="flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                <Save className="h-3.5 w-3.5" />
+                                {savingCover ? 'Kaydediliyor...' : 'İşyeri & Personel Tanıtımını Kaydet'}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (logbook.length > 0) selectEntryForEdit(logbook[0]);
+                                else openBlankNewPage([]);
+                              }}
+                              className="flex items-center gap-1 rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-800"
+                            >
+                              1. Gün Rapor Sayfasına Geç
+                              <ChevronRight className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
 
                         <div className="mx-auto rounded-sm border-2 border-slate-300 bg-white p-8 shadow-xl font-serif text-black space-y-6">
@@ -2945,8 +3207,45 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                                 <td className="border border-black p-2">{selected.advisorEmail}</td>
                               </tr>
                               <tr>
-                                <td className="border border-black bg-slate-100 p-2 font-bold">ÇALIŞILAN BİRİM / FAALİYET</td>
+                                <td className="border border-black bg-slate-100 p-2 font-bold">ÇALIŞILAN BİRİM</td>
                                 <td className="border border-black p-2">{selected.department || 'Bilgisayar / Yazılım Mühendisliği'}</td>
+                              </tr>
+                              <tr>
+                                <td className="border border-black bg-slate-100 p-2 font-bold">TOPLAM ÇALIŞAN SAYISI</td>
+                                <td className="border border-black p-1.5">
+                                  <input
+                                    type="text"
+                                    value={coverTotalEmployees}
+                                    onChange={(e) => setCoverTotalEmployees(e.target.value)}
+                                    disabled={isLogbookReadOnly}
+                                    placeholder="Örn: 45 Mühendis / 120 Toplam Personel"
+                                    className="w-full rounded border border-slate-200 px-2 py-1 font-sans text-xs text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-50"
+                                  />
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="border border-black bg-slate-100 p-2 font-bold align-top">
+                                  İŞYERİ FAALİYET ALANLARI (Maks. 5)
+                                </td>
+                                <td className="border border-black p-2 space-y-1.5">
+                                  {coverActivityAreas.map((area, idx) => (
+                                    <div key={idx} className="flex items-center gap-2">
+                                      <span className="w-4 font-sans font-bold text-slate-600">{idx + 1}.</span>
+                                      <input
+                                        type="text"
+                                        value={area}
+                                        onChange={(e) => {
+                                          const next = [...coverActivityAreas];
+                                          next[idx] = e.target.value;
+                                          setCoverActivityAreas(next);
+                                        }}
+                                        disabled={isLogbookReadOnly}
+                                        placeholder={`${idx + 1}. Faaliyet alanı...`}
+                                        className="w-full rounded border border-slate-200 px-2 py-1 font-sans text-xs text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-50"
+                                      />
+                                    </div>
+                                  ))}
+                                </td>
                               </tr>
                             </tbody>
                           </table>
@@ -2955,23 +3254,64 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                             <thead>
                               <tr>
                                 <th colSpan={4} className="border border-black bg-slate-100 p-2 text-center font-bold">
-                                  PERSONEL TANITIMI
+                                  PERSONEL TANITIMI (10 Satır — Düzenlenebilir)
                                 </th>
                               </tr>
                               <tr className="bg-slate-50">
-                                <th className="w-16 border border-black p-2">SIRA NO</th>
+                                <th className="w-14 border border-black p-2">SIRA</th>
                                 <th className="border border-black p-2">ADI SOYADI</th>
-                                <th className="border border-black p-2">MEZUN OLDUĞU FAKÜLTE / BÖLÜM</th>
-                                <th className="border border-black p-2">GÖREVİ</th>
+                                <th className="border border-black p-2">MEZUN OLDUĞU ÜNİVERSİTE / FAKÜLTE / BÖLÜM</th>
+                                <th className="border border-black p-2">GÖREVİ / UNVANI</th>
                               </tr>
                             </thead>
                             <tbody>
-                              <tr>
-                                <td className="border border-black p-2 text-center">1</td>
-                                <td className="border border-black p-2 font-bold">{selected.advisorName}</td>
-                                <td className="border border-black p-2">{selected.department || 'Mühendislik Fakültesi'}</td>
-                                <td className="border border-black p-2">Sorumlu Mühendis / Staj Danışmanı</td>
-                              </tr>
+                              {coverStaff.map((row, idx) => (
+                                <tr key={row.rowNo}>
+                                  <td className="border border-black p-1.5 text-center font-bold">{row.rowNo}</td>
+                                  <td className="border border-black p-1">
+                                    <input
+                                      type="text"
+                                      value={row.fullName}
+                                      onChange={(e) => {
+                                        const next = [...coverStaff];
+                                        next[idx] = { ...next[idx], fullName: e.target.value };
+                                        setCoverStaff(next);
+                                      }}
+                                      disabled={isLogbookReadOnly}
+                                      placeholder={idx === 0 ? selected.advisorName : 'Adı Soyadı'}
+                                      className="w-full rounded border border-slate-200 px-2 py-1 font-sans text-xs text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-50"
+                                    />
+                                  </td>
+                                  <td className="border border-black p-1">
+                                    <input
+                                      type="text"
+                                      value={row.graduatedDepartment}
+                                      onChange={(e) => {
+                                        const next = [...coverStaff];
+                                        next[idx] = { ...next[idx], graduatedDepartment: e.target.value };
+                                        setCoverStaff(next);
+                                      }}
+                                      disabled={isLogbookReadOnly}
+                                      placeholder="Üniversite / Fakülte / Bölüm"
+                                      className="w-full rounded border border-slate-200 px-2 py-1 font-sans text-xs text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-50"
+                                    />
+                                  </td>
+                                  <td className="border border-black p-1">
+                                    <input
+                                      type="text"
+                                      value={row.role}
+                                      onChange={(e) => {
+                                        const next = [...coverStaff];
+                                        next[idx] = { ...next[idx], role: e.target.value };
+                                        setCoverStaff(next);
+                                      }}
+                                      disabled={isLogbookReadOnly}
+                                      placeholder="Görevi / Unvanı"
+                                      className="w-full rounded border border-slate-200 px-2 py-1 font-sans text-xs text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-50"
+                                    />
+                                  </td>
+                                </tr>
+                              ))}
                             </tbody>
                           </table>
                         </div>
@@ -2999,6 +3339,11 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                                 ? `Word Rapor Sayfası: ${pageNumber}. İş Günü / ${selected.workDays} Gün`
                                 : `Yeni Word Rapor Sayfası (${pageNumber}. İş Günü / ${selected.workDays} Gün)`}
                             </span>
+                            {activeEntry?.isDraft && (
+                              <span className="rounded-md border border-amber-300 bg-amber-100 px-2 py-1 text-[11px] font-extrabold text-amber-900">
+                                TASLAK
+                              </span>
+                            )}
                             <button
                               type="button"
                               disabled={
@@ -3019,11 +3364,11 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                             </button>
                           </div>
 
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <button
                               type="button"
                               onClick={() => openBlankNewPage(logbook)}
-                              disabled={selected.advisorLogbookApproved || logbook.length >= selected.workDays}
+                              disabled={isLogbookReadOnly || logbook.length >= selected.workDays}
                               className="flex items-center gap-1.5 rounded-xl border border-emerald-600 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <Plus className="h-4 w-4" />
@@ -3032,12 +3377,21 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                                 : 'Yeni Sayfa Aç'}
                             </button>
                             <button
-                              type="submit"
-                              disabled={selected.advisorLogbookApproved}
-                              className="flex items-center gap-1.5 rounded-xl bg-blue-700 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-800 disabled:opacity-50"
+                              type="button"
+                              onClick={() => saveLogbookPage(true)}
+                              disabled={isLogbookReadOnly}
+                              className="flex items-center gap-1.5 rounded-xl border border-amber-500 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
                             >
                               <Save className="h-4 w-4" />
-                              {activeEntryId ? 'Sayfayı Güncelle' : 'Bu Sayfayı Kaydet'}
+                              Taslak Olarak Kaydet
+                            </button>
+                            <button
+                              type="submit"
+                              disabled={isLogbookReadOnly}
+                              className="flex items-center gap-1.5 rounded-xl bg-blue-700 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-800 disabled:opacity-50"
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                              {activeEntryId ? 'Tamamla & Güncelle' : 'Tamamla & Kaydet'}
                             </button>
                           </div>
                         </div>
@@ -3081,7 +3435,7 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                                     type="date"
                                     value={logDate}
                                     onChange={(e) => setLogDate(e.target.value)}
-                                    disabled={selected.advisorLogbookApproved}
+                                    disabled={isLogbookReadOnly}
                                     className="w-full rounded border border-slate-200 px-1.5 py-1 text-center text-xs font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
                                     required
                                   />
@@ -3106,7 +3460,7 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                                         )
                                       )
                                     }
-                                    disabled={selected.advisorLogbookApproved}
+                                    disabled={isLogbookReadOnly}
                                     className="w-full rounded border border-slate-200 px-2 py-1 text-center text-xs font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
                                     required
                                   />
@@ -3122,20 +3476,92 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                                 type="text"
                                 value={logTitle}
                                 onChange={(e) => setLogTitle(e.target.value)}
-                                disabled={selected.advisorLogbookApproved}
+                                disabled={isLogbookReadOnly}
                                 placeholder="Yapılan Çalışmanın Konusu / Başlığı (Örn: Veritabanı Tablolarının Tasarımı ve API Geliştirmesi)..."
                                 className="w-full border-0 bg-transparent text-sm font-bold text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none"
                               />
                             </div>
                             <textarea
-                              rows={16}
+                              rows={14}
                               value={logContent}
                               onChange={(e) => setLogContent(e.target.value)}
-                              disabled={selected.advisorLogbookApproved}
+                              disabled={isLogbookReadOnly}
                               placeholder="Bu iş gününde gerçekleştirdiğiniz staj çalışmalarını Word sayfasına yazar gibi detaylıca buraya yazınız. Tüm sayfalar tamamlandığında Kapak + Rapor Sayfaları tek bir PDF olarak indirilebilir ve sorumlu mühendise gönderilebilir..."
                               className="w-full flex-1 resize-y border-0 bg-transparent font-serif text-sm leading-relaxed text-slate-900 placeholder:font-sans placeholder:text-slate-400 focus:outline-none"
                               required
                             />
+
+                            {/* Günlük Teknik Görsel / Şema Yükleme Alanı (PDF'e Otomatik Gömülür) */}
+                            <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50/40 p-3.5 text-xs space-y-2.5">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 font-bold text-indigo-950">
+                                  <ImageIcon className="h-4 w-4 text-indigo-700" />
+                                  <span>Günlük Çalışma Görseli / Şema (PNG, JPG, WEBP — maks. 5 MB)</span>
+                                </div>
+                                {!isLogbookReadOnly && (
+                                  <div className="flex items-center gap-2">
+                                    <label className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-700">
+                                      <Upload className="h-3.5 w-3.5" />
+                                      {uploadingImage
+                                        ? 'Yükleniyor...'
+                                        : activeEntry?.hasImage
+                                        ? 'Görseli Değiştir'
+                                        : 'Görsel Ekle'}
+                                      <input
+                                        type="file"
+                                        accept=".png,.jpg,.jpeg,.webp"
+                                        onChange={(e) => {
+                                          handleUploadLogbookImage(e.target.files?.[0]);
+                                          e.target.value = '';
+                                        }}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                    {activeEntry?.hasImage && (
+                                      <button
+                                        type="button"
+                                        onClick={handleDeleteLogbookImage}
+                                        className="flex items-center gap-1 rounded-lg border border-rose-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-rose-700 hover:bg-rose-50"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                        Görseli Sil
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
+                              <input
+                                type="text"
+                                value={imageCaption}
+                                onChange={(e) => setImageCaption(e.target.value)}
+                                disabled={isLogbookReadOnly}
+                                placeholder="Görsel Açıklaması (Örn: Şekil 1: Sistem Veritabanı ER Diyagramı veya Ekran Görüntüsü)"
+                                className="w-full rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none disabled:bg-slate-50"
+                              />
+
+                              {!activeEntryId && pendingImageFile && (
+                                <p className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-900">
+                                  Seçili görsel: <b>{pendingImageFile.name}</b> — sayfayı kaydettiğinizde otomatik eklenecektir.
+                                </p>
+                              )}
+
+                              {activeEntry?.hasImage && (
+                                <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+                                  <AuthImage
+                                    src={`/internships/${selected.id}/logbook/${activeEntry.id}/image`}
+                                    alt={activeEntry.imageCaption || `${activeEntry.dayNumber}. Gün Çalışma Görseli`}
+                                    cacheKey={activeEntry.updatedAt}
+                                    className="max-h-56 w-auto rounded object-contain mx-auto"
+                                  />
+                                  {activeEntry.imageCaption && (
+                                    <p className="mt-1.5 text-center text-[11px] italic text-slate-600">
+                                      {activeEntry.imageCaption}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
 
                           {/* 3. ALT TABLO (FOOTER TABLE - rapor_sayfası.docx) */}

@@ -65,8 +65,32 @@ public static class DbSeeder
                     ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AcademicResult" integer NOT NULL DEFAULT 0;
                     ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AcceptedDaysCount" integer NOT NULL DEFAULT 0;
                     ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "AdvisorApprovedIpAddress" text NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "IsLogbookLocked" boolean NOT NULL DEFAULT FALSE;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "LogbookLockReason" text NULL;
+                    ALTER TABLE "Internships" ADD COLUMN IF NOT EXISTS "CoverPageDataJson" text NULL;
                     ALTER TABLE "Terms" ADD COLUMN IF NOT EXISTS "ApplicationStartDate" date NULL;
                     ALTER TABLE "Terms" ADD COLUMN IF NOT EXISTS "IsSaturdayAllowed" boolean NOT NULL DEFAULT TRUE;
+                    ALTER TABLE "Documents" ADD COLUMN IF NOT EXISTS "Status" integer NOT NULL DEFAULT 0;
+                    ALTER TABLE "Documents" ADD COLUMN IF NOT EXISTS "CommissionFeedback" text NULL;
+                    ALTER TABLE "Documents" ADD COLUMN IF NOT EXISTS "VersionNumber" integer NOT NULL DEFAULT 1;
+                    ALTER TABLE "Documents" ADD COLUMN IF NOT EXISTS "ReviewedAt" timestamp with time zone NULL;
+                    ALTER TABLE "Documents" ADD COLUMN IF NOT EXISTS "ReviewedById" uuid NULL;
+                    CREATE TABLE IF NOT EXISTS "DocumentVersions" (
+                        "Id" uuid NOT NULL CONSTRAINT "PK_DocumentVersions" PRIMARY KEY,
+                        "DocumentId" uuid NOT NULL REFERENCES "Documents"("Id") ON DELETE CASCADE,
+                        "VersionNumber" integer NOT NULL DEFAULT 1,
+                        "OriginalFileName" text NOT NULL,
+                        "StoredFileName" text NOT NULL,
+                        "ContentType" text NOT NULL,
+                        "SizeBytes" bigint NOT NULL DEFAULT 0,
+                        "UploadedById" uuid NOT NULL,
+                        "UploadedAt" timestamp with time zone NOT NULL
+                    );
+                    ALTER TABLE "LogbookEntries" ADD COLUMN IF NOT EXISTS "IsDraft" boolean NOT NULL DEFAULT FALSE;
+                    ALTER TABLE "LogbookEntries" ADD COLUMN IF NOT EXISTS "ImageStoredFileName" text NULL;
+                    ALTER TABLE "LogbookEntries" ADD COLUMN IF NOT EXISTS "ImageOriginalFileName" text NULL;
+                    ALTER TABLE "LogbookEntries" ADD COLUMN IF NOT EXISTS "ImageContentType" text NULL;
+                    ALTER TABLE "LogbookEntries" ADD COLUMN IF NOT EXISTS "ImageCaption" text NULL;
                     UPDATE "Internships" SET "AcademicResult" = 1, "AcceptedDaysCount" = "WorkDays" WHERE "Status" = 7 AND "AcademicResult" = 0;
                     UPDATE "Internships" SET "AcademicResult" = 3, "AcceptedDaysCount" = 0 WHERE "Status" = 8 AND "AcademicResult" = 0;
                     DO $$
@@ -115,6 +139,17 @@ public static class DbSeeder
                         "CreatedById" TEXT NULL,
                         "CreatedAt" TEXT NOT NULL
                     );
+                    CREATE TABLE IF NOT EXISTS "DocumentVersions" (
+                        "Id" TEXT NOT NULL CONSTRAINT "PK_DocumentVersions" PRIMARY KEY,
+                        "DocumentId" TEXT NOT NULL,
+                        "VersionNumber" INTEGER NOT NULL DEFAULT 1,
+                        "OriginalFileName" TEXT NOT NULL,
+                        "StoredFileName" TEXT NOT NULL,
+                        "ContentType" TEXT NOT NULL,
+                        "SizeBytes" INTEGER NOT NULL DEFAULT 0,
+                        "UploadedById" TEXT NOT NULL,
+                        "UploadedAt" TEXT NOT NULL
+                    );
                     """);
             }
             catch
@@ -137,8 +172,21 @@ public static class DbSeeder
                 "ALTER TABLE \"Internships\" ADD COLUMN \"AcademicResult\" INTEGER NOT NULL DEFAULT 0;",
                 "ALTER TABLE \"Internships\" ADD COLUMN \"AcceptedDaysCount\" INTEGER NOT NULL DEFAULT 0;",
                 "ALTER TABLE \"Internships\" ADD COLUMN \"AdvisorApprovedIpAddress\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"IsLogbookLocked\" INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"LogbookLockReason\" TEXT NULL;",
+                "ALTER TABLE \"Internships\" ADD COLUMN \"CoverPageDataJson\" TEXT NULL;",
                 "ALTER TABLE \"Terms\" ADD COLUMN \"ApplicationStartDate\" TEXT NULL;",
-                "ALTER TABLE \"Terms\" ADD COLUMN \"IsSaturdayAllowed\" INTEGER NOT NULL DEFAULT 1;"
+                "ALTER TABLE \"Terms\" ADD COLUMN \"IsSaturdayAllowed\" INTEGER NOT NULL DEFAULT 1;",
+                "ALTER TABLE \"Documents\" ADD COLUMN \"Status\" INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE \"Documents\" ADD COLUMN \"CommissionFeedback\" TEXT NULL;",
+                "ALTER TABLE \"Documents\" ADD COLUMN \"VersionNumber\" INTEGER NOT NULL DEFAULT 1;",
+                "ALTER TABLE \"Documents\" ADD COLUMN \"ReviewedAt\" TEXT NULL;",
+                "ALTER TABLE \"Documents\" ADD COLUMN \"ReviewedById\" TEXT NULL;",
+                "ALTER TABLE \"LogbookEntries\" ADD COLUMN \"IsDraft\" INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE \"LogbookEntries\" ADD COLUMN \"ImageStoredFileName\" TEXT NULL;",
+                "ALTER TABLE \"LogbookEntries\" ADD COLUMN \"ImageOriginalFileName\" TEXT NULL;",
+                "ALTER TABLE \"LogbookEntries\" ADD COLUMN \"ImageContentType\" TEXT NULL;",
+                "ALTER TABLE \"LogbookEntries\" ADD COLUMN \"ImageCaption\" TEXT NULL;"
             };
             foreach (var sql in alterColumns)
             {
@@ -576,7 +624,7 @@ public static class DbSeeder
     public static async Task ResetInternshipsAsync(AppDbContext db, IFileStorage storage)
     {
         var nonArchivedInternships = await db.Internships
-            .Include(i => i.Documents)
+            .Include(i => i.Documents).ThenInclude(d => d.Versions)
             .Include(i => i.LogbookEntries)
             .Include(i => i.LeaveRequests)
             .Where(i => !i.IsArchived)
@@ -588,6 +636,16 @@ public static class DbSeeder
             {
                 if (!string.IsNullOrWhiteSpace(doc.StoredFileName))
                     storage.Delete(doc.StoredFileName);
+                foreach (var ver in doc.Versions)
+                {
+                    if (!string.IsNullOrWhiteSpace(ver.StoredFileName))
+                        storage.Delete(ver.StoredFileName);
+                }
+            }
+            foreach (var entry in i.LogbookEntries)
+            {
+                if (!string.IsNullOrWhiteSpace(entry.ImageStoredFileName))
+                    storage.Delete(entry.ImageStoredFileName);
             }
             db.Documents.RemoveRange(i.Documents);
             db.LogbookEntries.RemoveRange(i.LogbookEntries);

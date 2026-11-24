@@ -121,6 +121,13 @@ public class CommitteeService
         i.UpdatedAt = DateTime.UtcNow;
         i.Company.IsVerified = true;
 
+        foreach (var doc in i.Documents.Where(d => (d.Type == DocumentType.Form2 || d.Type == DocumentType.Spas) && d.Status == DocumentStatus.Pending))
+        {
+            doc.Status = DocumentStatus.Approved;
+            doc.ReviewedAt = DateTime.UtcNow;
+            doc.ReviewedById = _currentUser.UserId;
+        }
+
         // 2) KPTO ve öğrenci bildirimleri.
         _notify.ToRole(UserRole.KptoOfficer, "Sigorta Bekleyen Yeni Stajyer",
             $"{i.Student.FullName} - {i.Company.Name} ({i.StartDate:dd.MM.yyyy} - {i.EndDate:dd.MM.yyyy})", NotificationType.Info, i.Id);
@@ -292,8 +299,9 @@ public class CommitteeService
         if (result == AcademicResultType.Successful)
         {
             if (i.Status == InternshipStatus.InProgress) throw AppException.BadRequest("Staj süresi henüz dolmadı.");
-            if (i.LogbookEntries.Count < i.WorkDays)
-                throw AppException.BadRequest($"Eksik staj defteriyle staj onaylanamaz! Öğrenci {i.WorkDays} iş gününün tamamını doldurmalıdır (Mevcut: {i.LogbookEntries.Count} / {i.WorkDays} gün).");
+            var completedCount = i.LogbookEntries.Count(e => !e.IsDraft);
+            if (completedCount < i.WorkDays)
+                throw AppException.BadRequest($"Eksik staj defteriyle staj onaylanamaz! Öğrenci {i.WorkDays} iş gününün tamamını doldurup tamamlamalıdır (Tamamlanan: {completedCount} / {i.WorkDays} gün).");
             if (!i.AdvisorLogbookApproved) throw AppException.BadRequest("Şirket yetkilisi henüz sanal defteri onaylamadı.");
             if (!i.Documents.Any(d => d.Type == DocumentType.ResultForm)) throw AppException.BadRequest("Şirketin imzalı sonuç formu yüklenmemiş.");
 
@@ -336,6 +344,8 @@ public class CommitteeService
         i.EvaluationNote = string.IsNullOrWhiteSpace(req.Note) ? null : req.Note.Trim();
         i.EvaluatedAt = DateTime.UtcNow;
         i.ReviewedById = _currentUser.UserId;
+        i.IsLogbookLocked = true;
+        i.LogbookLockReason ??= "Staj sonu değerlendirmesi tamamlandığı için defter kilitlendi.";
         i.UpdatedAt = DateTime.UtcNow;
 
         var notifTitle = result switch
@@ -354,6 +364,62 @@ public class CommitteeService
         await _notify.TryEmailAsync(i.Student.Email, "Staj Değerlendirme Sonucu",
             $"<p>Sayın {i.Student.FullName},</p><p>{i.Type.ToTurkish()} değerlendirme sonucunuz: <b>{resultLabel}{daySummary}</b></p>" +
             (string.IsNullOrWhiteSpace(i.EvaluationNote) ? "" : $"<blockquote>{System.Net.WebUtility.HtmlEncode(i.EvaluationNote)}</blockquote>"), ct);
+        return await _internships.ToDetailAsync(i, ct);
+    }
+
+    /// <summary>
+    /// Yüklenen resmi bir belgeyi (Form 2, SPAS, Form 3, Sonuç Formu vb.) komisyon düzeyinde onaylar, düzeltme ister veya reddeder.
+    /// </summary>
+    public async Task<DocumentDto> ReviewDocumentAsync(Guid documentId, DocumentReviewRequest req, CancellationToken ct = default)
+    {
+        if (req.Status is DocumentStatus.RevisionRequested or DocumentStatus.Rejected && string.IsNullOrWhiteSpace(req.Feedback))
+            throw AppException.BadRequest("Düzeltme veya ret kararı için geri bildirim / gerekçe yazılmalıdır.");
+
+        var doc = await _db.Documents
+            .Include(d => d.Internship).ThenInclude(i => i.Student)
+            .Include(d => d.Versions)
+            .FirstOrDefaultAsync(d => d.Id == documentId, ct) ?? throw AppException.NotFound("Belge");
+
+        doc.Status = req.Status;
+        doc.CommissionFeedback = string.IsNullOrWhiteSpace(req.Feedback) ? null : req.Feedback.Trim();
+        doc.ReviewedAt = DateTime.UtcNow;
+        doc.ReviewedById = _currentUser.UserId;
+
+        var statusText = req.Status.ToTurkish();
+        var msgBody = string.IsNullOrWhiteSpace(doc.CommissionFeedback)
+            ? $"{doc.OriginalFileName} belgeniz komisyon tarafından \"{statusText}\" olarak işaretlendi."
+            : $"{doc.OriginalFileName} belgeniz \"{statusText}\" — Not: {doc.CommissionFeedback}";
+
+        _notify.ToUser(doc.Internship.StudentId, $"Belge Durumu: {statusText}",
+            msgBody, req.Status == DocumentStatus.Approved ? NotificationType.Success : NotificationType.Warning, doc.InternshipId);
+        _notify.Audit("Document.Review", nameof(Document), doc.Id, $"{doc.Type} -> {statusText} | {doc.CommissionFeedback}");
+
+        await _db.SaveChangesAsync(ct);
+        return doc.ToDto();
+    }
+
+    /// <summary>
+    /// Komisyon tarafından öğrencinin sanal staj defterini kilitler veya kilidini açar.
+    /// </summary>
+    public async Task<InternshipDetailDto> SetLogbookLockAsync(Guid id, LogbookLockRequest req, CancellationToken ct = default)
+    {
+        var i = await _internships.LoadAsync(id, ct);
+        i.IsLogbookLocked = req.Locked;
+        i.LogbookLockReason = req.Locked
+            ? (string.IsNullOrWhiteSpace(req.Reason) ? "Staj Komisyonu tarafından kilitlendi." : req.Reason.Trim())
+            : null;
+        i.UpdatedAt = DateTime.UtcNow;
+
+        _notify.ToUser(i.StudentId,
+            req.Locked ? "Staj Defteriniz Kilitlendi" : "Staj Defteri Kilidi Açıldı",
+            req.Locked
+                ? $"Sanal staj defteriniz düzenlemeye kapatıldı: {i.LogbookLockReason}"
+                : "Sanal staj defterinizin düzenleme kilidi Staj Komisyonu tarafından açıldı.",
+            req.Locked ? NotificationType.Warning : NotificationType.Info,
+            i.Id);
+
+        _notify.Audit(req.Locked ? "Internship.LogbookLock" : "Internship.LogbookUnlock", nameof(Internship), i.Id, i.LogbookLockReason);
+        await _db.SaveChangesAsync(ct);
         return await _internships.ToDetailAsync(i, ct);
     }
 
@@ -512,7 +578,7 @@ public class CommitteeService
     public async Task<ResetInternshipsResultDto> ResetAllInternshipsAsync(CancellationToken ct = default)
     {
         var activeInternships = await _db.Internships
-            .Include(i => i.Documents)
+            .Include(i => i.Documents).ThenInclude(d => d.Versions)
             .Include(i => i.LogbookEntries)
             .Include(i => i.LeaveRequests)
             .Where(i => !i.IsArchived)
@@ -523,9 +589,19 @@ public class CommitteeService
         {
             if (!string.IsNullOrWhiteSpace(doc.StoredFileName))
                 _storage.Delete(doc.StoredFileName);
+            foreach (var ver in doc.Versions)
+            {
+                if (!string.IsNullOrWhiteSpace(ver.StoredFileName))
+                    _storage.Delete(ver.StoredFileName);
+            }
         }
 
         var logbooks = activeInternships.SelectMany(i => i.LogbookEntries).ToList();
+        foreach (var entry in logbooks)
+        {
+            if (!string.IsNullOrWhiteSpace(entry.ImageStoredFileName))
+                _storage.Delete(entry.ImageStoredFileName);
+        }
         var leaves = activeInternships.SelectMany(i => i.LeaveRequests).ToList();
         var notifications = await _db.Notifications.ToListAsync(ct);
         var auditLogs = await _db.AuditLogs.ToListAsync(ct);
