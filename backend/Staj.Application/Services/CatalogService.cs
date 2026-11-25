@@ -25,6 +25,31 @@ public class CatalogService
         _notify = notify;
     }
 
+    /// <summary>
+    /// Oturumdaki kullanıcının (Öğrenci, Komisyon veya Bölüm Başkanı) akademik bölümünü döner.
+    /// </summary>
+    private async Task<string> GetCurrentDepartmentAsync(CancellationToken ct = default)
+    {
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == _currentUser.UserId, ct);
+        return string.IsNullOrWhiteSpace(user?.Department) ? "Bilgisayar Mühendisliği" : user.Department.Trim();
+    }
+
+    /// <summary>
+    /// Yalnızca belirtilen bölümdeki öğrencilere bildirim gönderir.
+    /// </summary>
+    private async Task NotifyDepartmentStudentsAsync(string department, string title, string message, CancellationToken ct = default)
+    {
+        var studentIds = await _db.Users.AsNoTracking()
+            .Where(u => u.Role == UserRole.Student && (u.Department ?? "Bilgisayar Mühendisliği") == department)
+            .Select(u => u.Id)
+            .ToListAsync(ct);
+
+        foreach (var sid in studentIds)
+        {
+            _notify.ToUser(sid, title, message);
+        }
+    }
+
     // ------------------------------------------------------------------ DÖNEMLER
 
     /// <summary>
@@ -53,6 +78,7 @@ public class CatalogService
 
         if (req.PublishAnnouncement)
         {
+            var myDept = await GetCurrentDepartmentAsync(ct);
             var appStart = term.ApplicationStartDate.HasValue
                 ? $"{term.ApplicationStartDate.Value:dd.MM.yyyy} – "
                 : "";
@@ -69,8 +95,8 @@ public class CatalogService
                 IsActive = true,
                 CreatedById = _currentUser.UserId
             });
-            _notify.ToRole(UserRole.Student, $"Yeni Staj Dönemi: {term.Name}",
-                $"Son Başvuru: {term.ApplicationDeadline:dd.MM.yyyy} | Staj: {term.EarliestStartDate:dd.MM.yyyy} – {term.LatestEndDate:dd.MM.yyyy}");
+            await NotifyDepartmentStudentsAsync(myDept, $"Yeni Staj Dönemi: {term.Name}",
+                $"Son Başvuru: {term.ApplicationDeadline:dd.MM.yyyy} | Staj: {term.EarliestStartDate:dd.MM.yyyy} – {term.LatestEndDate:dd.MM.yyyy}", ct);
         }
 
         _notify.Audit("Term.Create", nameof(Term), term.Id, term.Name);
@@ -257,22 +283,31 @@ public class CatalogService
     // ------------------------------------------------------------------ İLANLAR
 
     /// <summary>
-    /// Firma ilanlarını listeler (öğrenciler yalnızca aktif ilanları görür).
+    /// Firma ilanlarını listeler (her bölüm komisyonu ve öğrencisi yalnızca kendi bölüm komisyonunun yayınladığı ilanları görür).
     /// </summary>
     public async Task<List<ListingDto>> GetListingsAsync(bool onlyActive, CancellationToken ct = default)
     {
+        var myDept = await GetCurrentDepartmentAsync(ct);
+        var deptStaffIds = await _db.Users.AsNoTracking()
+            .Where(u => (u.Department ?? "Bilgisayar Mühendisliği") == myDept)
+            .Select(u => (Guid?)u.Id)
+            .ToListAsync(ct);
+
         var today = DateOnly.FromDateTime(DateTime.Today);
-        var q = _db.CompanyListings.AsQueryable();
+        var q = _db.CompanyListings.Where(l =>
+            (l.CreatedById != null && deptStaffIds.Contains(l.CreatedById)) ||
+            (l.CreatedById == null && myDept == "Bilgisayar Mühendisliği"));
         if (onlyActive) q = q.Where(l => l.IsActive && (l.Deadline == null || l.Deadline >= today));
         var list = await q.OrderByDescending(l => l.CreatedAt).ToListAsync(ct);
         return list.Select(l => l.ToDto()).ToList();
     }
 
     /// <summary>
-    /// Yeni ilan girer ve öğrenci duyuru panelinde duyuru olarak da yayınlar (Madde 4).
+    /// Yeni ilan girer ve yalnızca ilanı açan komisyonun kendi bölümündeki öğrencilerin duyuru panelinde yayınlar (Madde 4).
     /// </summary>
     public async Task<ListingDto> CreateListingAsync(ListingUpsertRequest req, CancellationToken ct = default)
     {
+        var myDept = await GetCurrentDepartmentAsync(ct);
         var l = new CompanyListing { CreatedById = _currentUser.UserId };
         await ApplyListingAsync(l, req, ct);
         _db.CompanyListings.Add(l);
@@ -289,7 +324,7 @@ public class CatalogService
             CreatedById = _currentUser.UserId
         });
 
-        _notify.ToRole(UserRole.Student, "Yeni Stajyer Arayan Firma Duyurusu", $"{l.CompanyName}: {l.Title}");
+        await NotifyDepartmentStudentsAsync(myDept, "Yeni Stajyer Arayan Firma Duyurusu", $"{l.CompanyName}: {l.Title}", ct);
         await _db.SaveChangesAsync(ct);
         return l.ToDto();
     }
@@ -297,24 +332,33 @@ public class CatalogService
     // ------------------------------------------------------------------ DUYURULAR (KOMİSYON & ÖĞRENCİ DUYURU PANELİ)
 
     /// <summary>
-    /// Duyuruları listeler. <paramref name="onlyActive"/> true ise yalnızca aktif duyurular döner.
+    /// Duyuruları listeler. Her bölümün komisyonu ve öğrencisi yalnızca kendi bölüm komisyonunun yayınladığı duyuruları görür.
     /// </summary>
     public async Task<List<AnnouncementDto>> GetAnnouncementsAsync(bool onlyActive, CancellationToken ct = default)
     {
-        var q = _db.Announcements.AsQueryable();
+        var myDept = await GetCurrentDepartmentAsync(ct);
+        var deptStaffIds = await _db.Users.AsNoTracking()
+            .Where(u => (u.Department ?? "Bilgisayar Mühendisliği") == myDept)
+            .Select(u => (Guid?)u.Id)
+            .ToListAsync(ct);
+
+        var q = _db.Announcements.Where(a =>
+            (a.CreatedById != null && deptStaffIds.Contains(a.CreatedById)) ||
+            (a.CreatedById == null && myDept == "Bilgisayar Mühendisliği"));
         if (onlyActive) q = q.Where(a => a.IsActive);
         var list = await q.OrderByDescending(a => a.IsPinned).ThenByDescending(a => a.CreatedAt).ToListAsync(ct);
         return list.Select(a => a.ToDto()).ToList();
     }
 
     /// <summary>
-    /// Komisyon tarafından yeni duyuru yayınlar.
+    /// Komisyon tarafından yalnızca kendi bölümündeki öğrencilere yeni duyuru yayınlar.
     /// </summary>
     public async Task<AnnouncementDto> CreateAnnouncementAsync(AnnouncementUpsertRequest req, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(req.Title)) throw AppException.BadRequest("Duyuru başlığı zorunludur.");
         if (string.IsNullOrWhiteSpace(req.Content)) throw AppException.BadRequest("Duyuru içeriği zorunludur.");
 
+        var myDept = await GetCurrentDepartmentAsync(ct);
         var a = new Announcement
         {
             Title = req.Title.Trim(),
@@ -325,7 +369,7 @@ public class CatalogService
             CreatedById = _currentUser.UserId
         };
         _db.Announcements.Add(a);
-        _notify.ToRole(UserRole.Student, $"Komisyon Duyurusu: {a.Title}", a.Content);
+        await NotifyDepartmentStudentsAsync(myDept, $"Komisyon Duyurusu: {a.Title}", a.Content, ct);
         await _db.SaveChangesAsync(ct);
         return a.ToDto();
     }

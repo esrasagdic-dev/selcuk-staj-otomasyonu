@@ -1110,6 +1110,89 @@ public static class DbSeeder
 
         await db.SaveChangesAsync();
 
+        // 4.5) Makine ve Elektrik-Elektronik Mühendisliği komisyonlarına özel başlangıç duyuruları ve firma staj ilanları
+        var makineCommUser = await db.Users.FirstOrDefaultAsync(u => u.Email == "komisyon.makine@selcuk.edu.tr");
+        if (makineCommUser is not null && !await db.Announcements.AnyAsync(a => a.CreatedById == makineCommUser.Id))
+        {
+            db.Announcements.AddRange(
+                new Announcement
+                {
+                    Title = "📅 Makine Mühendisliği — 2026-2027 Yaz Dönemi Staj Başvuru ve İmalat/Tasarım İlkeleri",
+                    Content = "Makine Mühendisliği bölümü öğrencilerimizin Staj 1 (Talaşlı İmalat / Üretim) ve Staj 2 (Tasarım / Ar-Ge / Enerji) başvurularında kabul formunu (Form 2) ve SPAS müstehaklık belgesini staj başlangıcından en az 10 gün önce yüklemeleri zorunludur.",
+                    Category = "Calendar",
+                    IsPinned = true,
+                    IsActive = true,
+                    CreatedById = makineCommUser.Id
+                },
+                new Announcement
+                {
+                    Title = "📢 Stajyer Arayan Firma İlanı: Tümosan Motor ve Traktör Sanayi A.Ş. — CAD/CAM ve Motor Ar-Ge Stajyeri",
+                    Content = "Dizel motor tasarımı, SolidWorks 3B modelleme, ANSYS termal analizi ve CNC imalat süreçlerinde görev alacak Makine Mühendisliği öğrencileri aranmaktadır. (Son Başvuru: 15.06.2027) • İletişim: ik@tumosan.com.tr",
+                    Category = "CompanyListing",
+                    IsPinned = false,
+                    IsActive = true,
+                    CreatedById = makineCommUser.Id
+                });
+
+            db.CompanyListings.Add(new CompanyListing
+            {
+                Company = makineComp,
+                CompanyName = makineComp.Name,
+                Title = "CAD/CAM, SolidWorks ve Motor Ar-Ge Yaz Stajyeri",
+                Description = "Konya OSB fabrikamızda motor blok tasarımı, CNC talaşlı imalat ve kalite kontrol süreçlerinde görev alacak 3. ve 4. sınıf Makine Mühendisliği stajyerleri aranmaktadır.",
+                Contact = "ik@tumosan.com.tr",
+                City = "Konya",
+                Deadline = new DateOnly(2027, 6, 15),
+                Quota = 8,
+                Sector = "Otomotiv ve Makine İmalat",
+                Department = "Motor Ar-Ge ve Talaşlı İmalat",
+                IsActive = true,
+                CreatedById = makineCommUser.Id
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var eeCommUser = await db.Users.FirstOrDefaultAsync(u => u.Email == "komisyon.ee@selcuk.edu.tr");
+        if (eeCommUser is not null && !await db.Announcements.AnyAsync(a => a.CreatedById == eeCommUser.Id))
+        {
+            db.Announcements.AddRange(
+                new Announcement
+                {
+                    Title = "📅 Elektrik-Elektronik Mühendisliği — 2026-2027 Yaz Dönemi Staj Başvuru ve Laboratuvar/Saha İlkeleri",
+                    Content = "Elektrik-Elektronik Mühendisliği bölümü öğrencilerimizin güç sistemleri, yüksek gerilim, PLC otomasyon veya gömülü donanım staj başvurularında sorumlu mühendisin Elektrik / Elektronik Mühendisi unvanına sahip olması zorunludur.",
+                    Category = "Calendar",
+                    IsPinned = true,
+                    IsActive = true,
+                    CreatedById = eeCommUser.Id
+                },
+                new Announcement
+                {
+                    Title = "📢 Stajyer Arayan Firma İlanı: Meram Elektrik Dağıtım A.Ş. (MEDAŞ) — Yüksek Gerilim ve SCADA Stajyeri",
+                    Content = "İndirici trafo merkezleri, röle koordinasyonu, SCADA uzaktan izleme ve enerji dağıtım şebekelerinde görev alacak Elektrik-Elektronik Mühendisliği stajyerleri aranmaktadır. (Son Başvuru: 20.06.2027) • İletişim: staj@meramedas.com.tr",
+                    Category = "CompanyListing",
+                    IsPinned = false,
+                    IsActive = true,
+                    CreatedById = eeCommUser.Id
+                });
+
+            db.CompanyListings.Add(new CompanyListing
+            {
+                Company = eeComp,
+                CompanyName = eeComp.Name,
+                Title = "Yüksek Gerilim, SCADA ve Enerji Dağıtım Stajyeri",
+                Description = "MEDAŞ Konya Bölge Müdürlüğü bünyesinde trafo merkezleri, SCADA otomasyon ve akıllı şebeke projelerinde yer alacak Elektrik-Elektronik Mühendisliği stajyerleri aranmaktadır.",
+                Contact = "staj@meramedas.com.tr",
+                City = "Konya",
+                Deadline = new DateOnly(2027, 6, 20),
+                Quota = 6,
+                Sector = "Enerji ve Elektrik Dağıtım",
+                Department = "SCADA ve Şebeke İşletme",
+                IsActive = true,
+                CreatedById = eeCommUser.Id
+            });
+            await db.SaveChangesAsync();
+        }
+
         // 5) Tüm belgelerin (Form 2, SPAS, Form 4, Form 7, Maaş Dekontu) diskte (uploads klasörü) gerçek PDF dosyalarının varlığını garanti altına al
         if (pdf is not null)
         {
