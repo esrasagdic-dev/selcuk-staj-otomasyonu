@@ -18,6 +18,13 @@ RUN dotnet publish "Staj.Api.csproj" -c Release -o /app/publish /p:UseAppHost=fa
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
+
+# Install Linux fonts and fontconfig so QuestPDF renders all Turkish characters and form tables properly in Docker
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends fontconfig libfontconfig1 fonts-liberation fonts-dejavu-core && \
+    fc-cache -f -v && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/publish .
 
 # Create uploads folder

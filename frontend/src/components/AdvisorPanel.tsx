@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   AlertCircle,
-  BookOpen,
   Building2,
   CheckCircle2,
   Download,
@@ -23,7 +22,6 @@ import {
   type LogbookEntryDto,
 } from '../api';
 import { DocumentPreviewModal, type PreviewSource } from './DocumentPreviewModal';
-import { AuthImage } from './AuthImage';
 
 export const AdvisorPanel: React.FC = () => {
   const [interns, setInterns] = useState<InternshipSummaryDto[]>([]);
@@ -340,6 +338,19 @@ export const AdvisorPanel: React.FC = () => {
                       </div>
                     )}
 
+                    {isLogbookComplete &&
+                      (selected.currentDay ?? 0) < selected.workDays &&
+                      selected.status !== 'CompletedPendingReview' &&
+                      selected.status !== 'Passed' &&
+                      !selected.advisorLogbookApproved && (
+                        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900">
+                          <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                          <span>
+                            <b>Staj Süresi Henüz Tamamlanmadı:</b> Öğrenci şu an stajın <b>{selected.currentDay ?? 0}. iş günündedir</b> ({selected.workDays} iş günü dolmadı). Staj süresi tamamlanmadan defter onaylanamaz.
+                          </span>
+                        </div>
+                      )}
+
                     {selected.advisorLogbookApproved ? (
                       <div className="rounded-lg bg-emerald-100 px-3 py-2.5 text-xs font-bold text-emerald-800 space-y-0.5">
                         <div className="flex items-center gap-2">
@@ -355,7 +366,12 @@ export const AdvisorPanel: React.FC = () => {
                     ) : (
                       <button
                         onClick={handleApproveLogbook}
-                        disabled={!isLogbookComplete}
+                        disabled={
+                          !isLogbookComplete ||
+                          ((selected.currentDay ?? 0) < selected.workDays &&
+                            selected.status !== 'CompletedPendingReview' &&
+                            selected.status !== 'Passed')
+                        }
                         className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         ☑ Staj Defterini Gördüm ve İnceledim (Onayla)
@@ -457,67 +473,6 @@ export const AdvisorPanel: React.FC = () => {
                         </button>
                       ))}
                     </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Sanal Staj Defteri Sayfaları */}
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                  <div className="flex items-center gap-2">
-                    <BookOpen className="h-5 w-5 text-indigo-600" />
-                    <h4 className="font-bold text-slate-900">
-                      Öğrencinin Sanal Staj Defteri Sayfaları ({logbook.length} / {selected.workDays} Gün)
-                    </h4>
-                  </div>
-                </div>
-
-                {logbook.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-slate-500">
-                    Öğrenci henüz sanal staj defteri sayfası girmemiştir.
-                  </p>
-                ) : (
-                  <div className="mt-4 space-y-3">
-                    {logbook.map((entry) => (
-                      <div
-                        key={entry.id}
-                        className="rounded-xl border border-slate-200 bg-slate-50/60 p-4"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-indigo-900">
-                              {entry.dayNumber}. İş Günü — {entry.title}
-                            </span>
-                            {entry.isDraft && (
-                              <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold text-amber-900 border border-amber-300">
-                                TASLAK
-                              </span>
-                            )}
-                          </div>
-                          <span className="rounded-md bg-white px-2.5 py-0.5 text-xs font-medium text-slate-600 border border-slate-200">
-                            {formatDate(entry.date)}
-                          </span>
-                        </div>
-                        <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
-                          {entry.content}
-                        </p>
-                        {entry.hasImage && (
-                          <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2.5">
-                            <AuthImage
-                              src={`/internships/${selected.id}/logbook/${entry.id}/image`}
-                              alt={entry.imageCaption || `${entry.dayNumber}. Gün Çalışma Görseli`}
-                              cacheKey={entry.updatedAt}
-                              className="max-h-60 w-auto rounded object-contain"
-                            />
-                            {entry.imageCaption && (
-                              <p className="mt-1.5 text-xs italic text-slate-600">
-                                {entry.imageCaption}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>

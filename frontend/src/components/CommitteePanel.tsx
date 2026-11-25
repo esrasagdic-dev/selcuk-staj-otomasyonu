@@ -128,10 +128,11 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
   const [evalResult, setEvalResult] = useState<AcademicResultType>('Successful');
   const [acceptedDays, setAcceptedDays] = useState<number>(20);
 
-  // Yeni Dönem Formu
+  // Yeni / Düzenlenen Dönem Formu
+  const [editingTermId, setEditingTermId] = useState<string | null>(null);
   const [newTerm, setNewTerm] = useState({
-    name: '2026-2027 Yaz Dönemi - Staj 1',
-    academicYear: '2026',
+    name: '2026-2027 Yaz Stajı - Staj 1',
+    academicYear: '2026-2027',
     internshipType: 'Staj1' as 'Staj1' | 'Staj2',
     applicationStartDate: '2026-05-01',
     earliestStartDate: '2026-06-15',
@@ -824,11 +825,51 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
     e.preventDefault();
     setMsg(null);
     try {
-      await api.post('/terms', {
+      const payload = {
         ...newTerm,
         applicationStartDate: newTerm.applicationStartDate || null,
-      });
-      setMsg({ type: 'ok', text: 'Yeni staj dönemi açıldı.' });
+      };
+      if (editingTermId) {
+        await api.put(`/terms/${editingTermId}`, payload);
+        setEditingTermId(null);
+        setMsg({ type: 'ok', text: 'Seçili staj dönemi güncellendi.' });
+      } else {
+        await api.post('/terms', payload);
+        setMsg({ type: 'ok', text: 'Staj dönemi kaydedildi.' });
+      }
+      await loadOtherTabs();
+    } catch (err) {
+      setMsg({ type: 'err', text: getErrorMessage(err) });
+    }
+  };
+
+  const handleEditTerm = (t: TermDto) => {
+    setEditingTermId(t.id);
+    setNewTerm({
+      name: t.name,
+      academicYear: t.academicYear,
+      internshipType: t.internshipType,
+      applicationStartDate: t.applicationStartDate ?? '2026-05-01',
+      earliestStartDate: t.earliestStartDate,
+      latestEndDate: t.latestEndDate,
+      applicationDeadline: t.applicationDeadline,
+      reportDeadline: t.reportDeadline,
+      minWorkDays: t.minWorkDays,
+      maxWorkDays: t.maxWorkDays,
+      isSaturdayAllowed: t.isSaturdayAllowed ?? true,
+      isActive: t.isActive,
+      publishAnnouncement: false,
+    });
+  };
+
+  const handleDeleteTerm = async (id: string) => {
+    setMsg(null);
+    try {
+      await api.delete(`/terms/${id}`);
+      if (editingTermId === id) {
+        setEditingTermId(null);
+      }
+      setMsg({ type: 'ok', text: 'Staj dönemi silindi.' });
       await loadOtherTabs();
     } catch (err) {
       setMsg({ type: 'err', text: getErrorMessage(err) });
@@ -2418,7 +2459,22 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
               onSubmit={handleCreateTerm}
               className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-3"
             >
-              <h3 className="font-bold text-slate-900">Yeni Staj Dönemi Aç (Staj 1 / Staj 2)</h3>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-bold text-slate-900">
+                  {editingTermId
+                    ? 'Seçili Staj Dönemini Düzenle'
+                    : 'Yeni Staj Dönemi Ekle (Staj 1 / Staj 2)'}
+                </h3>
+                {editingTermId && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingTermId(null)}
+                    className="rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-100"
+                  >
+                    + Yeni Dönem Ekleme Moduna Geç
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-2.5 text-xs">
                 <div className="col-span-2">
                   <label className="font-bold text-slate-700">Dönem Adı</label>
@@ -2521,13 +2577,24 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                   Bu dönemi oluştururken öğrencilere otomatik Takvim Duyurusu yayınla
                 </label>
               </div>
-              <button
-                type="submit"
-                className="flex items-center gap-1.5 rounded-xl bg-blue-700 px-4 py-2 text-xs font-bold text-white hover:bg-blue-800"
-              >
-                <Plus className="h-4 w-4" />
-                Staj Takvimini Güncelle / Kaydet
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="submit"
+                  className="flex items-center gap-1.5 rounded-xl bg-blue-700 px-4 py-2 text-xs font-bold text-white hover:bg-blue-800"
+                >
+                  <Plus className="h-4 w-4" />
+                  {editingTermId ? 'Seçili Dönemi Güncelle' : 'Yeni Staj Dönemi Ekle'}
+                </button>
+                {editingTermId && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingTermId(null)}
+                    className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                  >
+                    İptal
+                  </button>
+                )}
+              </div>
             </form>
 
             {/* Kayıtlı Staj Dönemleri Özeti */}
@@ -2535,9 +2602,14 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
               <h4 className="font-bold text-slate-900">
                 Kayıtlı Staj Dönemleri ({terms.length})
               </h4>
-              <div className="max-h-48 divide-y divide-slate-100 overflow-y-auto text-xs">
+              <div className="max-h-60 divide-y divide-slate-100 overflow-y-auto text-xs">
                 {terms.map((t) => (
-                  <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <div
+                    key={t.id}
+                    className={`flex flex-wrap items-center justify-between gap-2 py-2.5 px-2 rounded-lg transition ${
+                      editingTermId === t.id ? 'bg-blue-50/80 ring-1 ring-blue-300' : ''
+                    }`}
+                  >
                     <div>
                       <p className="font-bold text-slate-900">
                         {t.name} ({t.internshipType === 'Staj1' ? 'Staj 1' : 'Staj 2'})
@@ -2546,7 +2618,7 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                         Başvuru: {t.applicationStartDate ? formatDate(t.applicationStartDate) : '-'} – {formatDate(t.applicationDeadline)} • Staj: {formatDate(t.earliestStartDate)} – {formatDate(t.latestEndDate)}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <span
                         className={`rounded px-2 py-0.5 text-[10px] font-bold ${
                           t.isSaturdayAllowed === false
@@ -2559,6 +2631,22 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
                       <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
                         {t.applicationCount} Başvuru
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => handleEditTerm(t)}
+                        className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700 hover:bg-blue-100"
+                      >
+                        Düzenle
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTerm(t.id)}
+                        title="Dönemi Sil"
+                        className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-700 hover:bg-rose-100"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Sil
+                      </button>
                     </div>
                   </div>
                 ))}

@@ -65,6 +65,10 @@ public class AdvisorService
         if (completedCount < i.WorkDays)
             throw AppException.BadRequest($"Eksik staj defterine onay açılamaz! Öğrenci {i.WorkDays} iş gününün tamamını taslaktan çıkarıp tamamlamalıdır (Tamamlanan: {completedCount} / {i.WorkDays} gün).");
 
+        var elapsedDays = await _internships.CalculateElapsedWorkDaysAsync(i, ct);
+        if (elapsedDays < i.WorkDays)
+            throw AppException.BadRequest($"Öğrencinin staj süresi henüz tamamlanmamıştır (Şu an: Stajın {elapsedDays}. İş Günü / Toplam: {i.WorkDays} İş Günü, Bitiş Tarihi: {i.EndDate:dd.MM.yyyy}). Staj süresi bitmeden staj defteri onaylanamaz.");
+
         i.AdvisorLogbookApproved = true;
         i.AdvisorApprovedAt = DateTime.UtcNow;
         i.AdvisorApprovedIpAddress = string.IsNullOrWhiteSpace(ipAddress) ? null : ipAddress.Trim();

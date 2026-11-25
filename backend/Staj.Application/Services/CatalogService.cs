@@ -67,14 +67,22 @@ public class CatalogService
     }
 
     /// <summary>
-    /// Yeni staj dönemi açar.
+    /// Yeni staj dönemi açar (aynı ad ve staj türünde dönem varsa mükerrer kayıt açmak yerine mevcut dönemi günceller).
     /// </summary>
     public async Task<TermDto> CreateTermAsync(TermUpsertRequest req, CancellationToken ct = default)
     {
         Validate(req);
-        var term = new Term();
+        var cleanName = req.Name.Trim().ToLower();
+        var existing = await _db.Terms.FirstOrDefaultAsync(
+            t => t.InternshipType == req.InternshipType && t.Name.ToLower() == cleanName, ct);
+
+        var isNew = existing is null;
+        var term = existing ?? new Term();
         Apply(term, req);
-        _db.Terms.Add(term);
+        if (isNew)
+        {
+            _db.Terms.Add(term);
+        }
 
         if (req.PublishAnnouncement)
         {
@@ -85,7 +93,7 @@ public class CatalogService
             var satText = term.IsSaturdayAllowed ? "Cumartesi çalışması serbest" : "Cumartesi çalışması hariç";
             _db.Announcements.Add(new Announcement
             {
-                Title = $"📅 Staj Dönemi Açıldı: {term.Name}",
+                Title = isNew ? $"📅 Staj Dönemi Açıldı: {term.Name}" : $"📅 Staj Dönemi Güncellendi: {term.Name}",
                 Content = $"{term.InternshipType.ToTurkish()} ({term.AcademicYear}) başvuruları tanımlandı. " +
                           $"Başvuru Tarihleri: {appStart}{term.ApplicationDeadline:dd.MM.yyyy} | " +
                           $"Staj Aralığı: {term.EarliestStartDate:dd.MM.yyyy} – {term.LatestEndDate:dd.MM.yyyy} | " +
@@ -95,11 +103,11 @@ public class CatalogService
                 IsActive = true,
                 CreatedById = _currentUser.UserId
             });
-            await NotifyDepartmentStudentsAsync(myDept, $"Yeni Staj Dönemi: {term.Name}",
+            await NotifyDepartmentStudentsAsync(myDept, $"Staj Dönemi: {term.Name}",
                 $"Son Başvuru: {term.ApplicationDeadline:dd.MM.yyyy} | Staj: {term.EarliestStartDate:dd.MM.yyyy} – {term.LatestEndDate:dd.MM.yyyy}", ct);
         }
 
-        _notify.Audit("Term.Create", nameof(Term), term.Id, term.Name);
+        _notify.Audit(isNew ? "Term.Create" : "Term.Update", nameof(Term), term.Id, term.Name);
         await _db.SaveChangesAsync(ct);
         return (await GetTermsAsync(false, ct)).First(t => t.Id == term.Id);
     }
@@ -118,13 +126,24 @@ public class CatalogService
     }
 
     /// <summary>
-    /// Başvurusu olmayan dönemi siler.
+    /// Staj dönemini siler (bağlı başvurular varsa aynı türdeki diğer aktif döneme aktarır).
     /// </summary>
     public async Task DeleteTermAsync(Guid id, CancellationToken ct = default)
     {
         var term = await _db.Terms.Include(t => t.Internships).FirstOrDefaultAsync(t => t.Id == id, ct) ?? throw AppException.NotFound("Dönem");
-        if (term.Internships.Count > 0) throw AppException.BadRequest("Başvurusu olan dönem silinemez; pasif yapabilirsiniz.");
+        if (term.Internships.Count > 0)
+        {
+            var fallback = await _db.Terms.FirstOrDefaultAsync(t => t.Id != id && t.InternshipType == term.InternshipType, ct)
+                           ?? await _db.Terms.FirstOrDefaultAsync(t => t.Id != id, ct);
+            if (fallback is null)
+                throw AppException.BadRequest("Başvurusu olan tek dönem silinemez; önce yeni bir dönem ekleyiniz.");
+            foreach (var intern in term.Internships)
+            {
+                intern.TermId = fallback.Id;
+            }
+        }
         _db.Terms.Remove(term);
+        _notify.Audit("Term.Delete", nameof(Term), term.Id, term.Name);
         await _db.SaveChangesAsync(ct);
     }
 

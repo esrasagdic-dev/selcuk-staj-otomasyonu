@@ -15,20 +15,56 @@ namespace Staj.Infrastructure.Services;
 /// </summary>
 public class QuestPdfService : IPdfService
 {
+    private static readonly System.Globalization.CultureInfo TrCulture = new("tr-TR");
     private static readonly JsonSerializerOptions CoverJsonOpts = new() { PropertyNameCaseInsensitive = true };
     private static readonly byte[]? UniversityLogoBytes;
+    private static readonly byte[]? ReportHeaderLogoBytes;
     private readonly IFileStorage _files;
 
     static QuestPdfService()
     {
         QuestPDF.Settings.License = LicenseType.Community;
-        UniversityLogoBytes = TryLoadLogo();
+        UniversityLogoBytes = TryLoadAsset(
+            Path.Combine("wwwroot", "selcuk-amblem.png"),
+            Path.Combine("..", "..", "frontend", "public", "selcuk-amblem.png"),
+            Path.Combine("..", "..", "..", "formlar", "selcuküniamblem.png"),
+            "selcuk-amblem.png");
+        ReportHeaderLogoBytes = TryLoadAsset(
+            Path.Combine("wwwroot", "rapor-media1.png"),
+            Path.Combine("..", "..", "frontend", "public", "rapor-media1.png"),
+            "rapor-media1.png") ?? UniversityLogoBytes;
     }
 
     /// <summary>
     /// Yeni bir PDF üretim servisi oluşturur.
     /// </summary>
     public QuestPdfService(IFileStorage files) => _files = files;
+
+    private static string GetDepartmentHeaderName(Internship i)
+    {
+        var dept = string.IsNullOrWhiteSpace(i.Student?.Department)
+            ? "Bilgisayar Mühendisliği"
+            : i.Student.Department.Trim();
+        var upper = dept.ToUpper(TrCulture);
+        return upper.EndsWith("BÖLÜMÜ", StringComparison.Ordinal) ? upper : $"{upper} BÖLÜMÜ";
+    }
+
+    private static string GetDepartmentApprovalTitle(Internship i)
+    {
+        var dept = string.IsNullOrWhiteSpace(i.Student?.Department)
+            ? "Bilgisayar Mühendisliği"
+            : i.Student.Department.Trim();
+        var upper = dept.ToUpper(TrCulture);
+        return $"S. Ü. {upper} ONAYI";
+    }
+
+    private static string GetDocumentCodePrefix(Internship i)
+    {
+        var dept = (i.Student?.Department ?? "Bilgisayar Mühendisliği").ToUpper(TrCulture);
+        if (dept.Contains("MAKİNE")) return "TF-MM-SF";
+        if (dept.Contains("ELEKTRİK")) return "TF-EEM-SF";
+        return "TF-BM-SF";
+    }
 
     private static byte[] GenerateQrPng(string text)
     {
@@ -38,17 +74,9 @@ public class QuestPdfService : IPdfService
         return qr.GetGraphic(5);
     }
 
-    private static byte[]? TryLoadLogo()
+    private static byte[]? TryLoadAsset(params string[] relativePaths)
     {
         var baseDirs = new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory };
-        var relativePaths = new[]
-        {
-            Path.Combine("wwwroot", "selcuk-amblem.png"),
-            Path.Combine("..", "..", "frontend", "public", "selcuk-amblem.png"),
-            Path.Combine("..", "..", "frontend", "public", "rapor-media1.png"),
-            Path.Combine("..", "..", "..", "formlar", "selcuküniamblem.png"),
-            "selcuk-amblem.png"
-        };
 
         foreach (var baseDir in baseDirs)
         {
@@ -142,7 +170,7 @@ public class QuestPdfService : IPdfService
                         col.Item().AlignCenter().Text("T.C.").Bold().FontSize(10);
                         col.Item().AlignCenter().Text("SELÇUK ÜNİVERSİTESİ").Bold().FontSize(10);
                         col.Item().AlignCenter().Text("TEKNOLOJİ FAKÜLTESİ").Bold().FontSize(10);
-                        col.Item().AlignCenter().Text("BİLGİSAYAR MÜHENDİSLİĞİ BÖLÜMÜ").Bold().FontSize(9.5f);
+                        col.Item().AlignCenter().Text(GetDepartmentHeaderName(i)).Bold().FontSize(9.5f);
                     });
 
                     // Sağ Hücre: FORM-2 Doküman Bilgileri Tablosu
@@ -263,7 +291,7 @@ public class QuestPdfService : IPdfService
 
                         appTbl.Cell().BorderRight(0.5f).BorderBottom(0.5f).BorderColor(Colors.Black)
                             .Background(Colors.Grey.Lighten4).Padding(3).AlignCenter()
-                            .Text("S. Ü. BİLGİSAYAR MÜHENDİSLİĞİ ONAYI").Bold().FontSize(8.5f);
+                            .Text(GetDepartmentApprovalTitle(i)).Bold().FontSize(8.5f);
 
                         appTbl.Cell().BorderBottom(0.5f).BorderColor(Colors.Black)
                             .Background(Colors.Grey.Lighten4).Padding(3).AlignCenter()
@@ -426,7 +454,7 @@ public class QuestPdfService : IPdfService
                         col.Item().AlignCenter().Text("T.C.").Bold().FontSize(10);
                         col.Item().AlignCenter().Text("SELÇUK ÜNİVERSİTESİ").Bold().FontSize(10);
                         col.Item().AlignCenter().Text("TEKNOLOJİ FAKÜLTESİ").Bold().FontSize(10);
-                        col.Item().AlignCenter().Text("BİLGİSAYAR MÜHENDİSLİĞİ BÖLÜMÜ").Bold().FontSize(9.5f);
+                        col.Item().AlignCenter().Text(GetDepartmentHeaderName(i)).Bold().FontSize(9.5f);
                     });
 
                     t.Cell().Border(0.75f).BorderColor(Colors.Black).Table(meta =>
@@ -554,7 +582,7 @@ public class QuestPdfService : IPdfService
                         col.Item().AlignCenter().Text("T.C.").Bold().FontSize(10);
                         col.Item().AlignCenter().Text("SELÇUK ÜNİVERSİTESİ").Bold().FontSize(10);
                         col.Item().AlignCenter().Text("TEKNOLOJİ FAKÜLTESİ").Bold().FontSize(10);
-                        col.Item().AlignCenter().Text("BİLGİSAYAR MÜHENDİSLİĞİ BÖLÜMÜ").Bold().FontSize(9.5f);
+                        col.Item().AlignCenter().Text(GetDepartmentHeaderName(i)).Bold().FontSize(9.5f);
                     });
 
                     t.Cell().Border(0.75f).BorderColor(Colors.Black).Table(meta =>
@@ -724,7 +752,7 @@ public class QuestPdfService : IPdfService
                         col.Item().AlignCenter().Text("T.C.").Bold().FontSize(10.5f);
                         col.Item().AlignCenter().Text("SELÇUK ÜNİVERSİTESİ").Bold().FontSize(10.5f);
                         col.Item().AlignCenter().Text("TEKNOLOJİ FAKÜLTESİ").Bold().FontSize(10.5f);
-                        col.Item().AlignCenter().Text("BİLGİSAYAR MÜHENDİSLİĞİ BÖLÜMÜ").Bold().FontSize(10f);
+                        col.Item().AlignCenter().Text(GetDepartmentHeaderName(i)).Bold().FontSize(10f);
                     });
 
                     // Sağ Hücre: FORM-7 Doküman Bilgileri Tablosu
@@ -848,6 +876,7 @@ public class QuestPdfService : IPdfService
     private static void RenderReportCoverPage(IDocumentContainer container, Internship i)
     {
         var isStaj1 = i.Type == InternshipType.Staj1;
+        var deptHeader = GetDepartmentHeaderName(i);
         container.Page(page =>
         {
             page.Size(PageSizes.A4);
@@ -859,34 +888,29 @@ public class QuestPdfService : IPdfService
                 col.Item().AlignCenter().Text("T.C.").Bold().FontSize(16);
                 col.Item().PaddingTop(4).AlignCenter().Text("SELÇUK ÜNİVERSİTESİ").Bold().FontSize(16);
                 col.Item().PaddingTop(4).AlignCenter().Text("TEKNOLOJİ FAKÜLTESİ").Bold().FontSize(15);
-                col.Item().PaddingTop(4).AlignCenter().Text("BİLGİSAYAR MÜHENDİSLİĞİ BÖLÜMÜ").Bold().FontSize(14);
+                col.Item().PaddingTop(4).AlignCenter().Text(deptHeader).Bold().FontSize(14);
 
-                col.Item().PaddingVertical(35).AlignCenter().Element(el =>
+                col.Item().PaddingVertical(40).AlignCenter().Element(el =>
                 {
                     if (UniversityLogoBytes is { Length: > 0 })
-                        el.Height(120).Image(UniversityLogoBytes).FitArea();
+                        el.Height(125).Image(UniversityLogoBytes).FitArea();
                     else
-                        el.Text("SELÇUK ÜNİVERSİTESİ AMBLEMİ").Bold();
+                        el.Text("SELÇUK ÜNİVERSİTESİ").Bold();
                 });
 
-                col.Item().PaddingTop(10).AlignCenter().Text($"Öğrenci Numarası: {i.Student?.StudentNo ?? "-"}").Bold().FontSize(13);
-                col.Item().PaddingTop(6).AlignCenter().Text($"Adı ve Soyadı: {i.Student?.FullName ?? "-"}").Bold().FontSize(13);
+                col.Item().PaddingTop(12).AlignCenter().Text("Öğrenci Numarası Adı ve Soyadı").Bold().FontSize(12);
+                col.Item().PaddingTop(6).AlignCenter().Text($"{i.Student?.StudentNo ?? "-"}   {i.Student?.FullName ?? "-"}").Bold().FontSize(13.5f);
 
-                col.Item().PaddingVertical(35).AlignCenter().Column(c =>
+                col.Item().PaddingVertical(45).AlignCenter().Column(c =>
                 {
-                    c.Item().AlignCenter().Text(isStaj1 ? "STAJ I RAPORU" : "STAJ II RAPORU").Bold().FontSize(20);
-                    c.Item().PaddingTop(8).AlignCenter().Text($"{i.Company?.Name ?? "-"}").Bold().FontSize(12).FontColor(Colors.Grey.Darken3);
-                    c.Item().PaddingTop(4).AlignCenter().Text($"({i.StartDate:dd.MM.yyyy} - {i.EndDate:dd.MM.yyyy} • {i.WorkDays} İş Günü)").FontSize(10.5f).FontColor(Colors.Grey.Darken2);
+                    c.Item().AlignCenter().Text(isStaj1 ? "Staj I" : "Staj II").Bold().FontSize(22);
+                    c.Item().PaddingTop(4).AlignCenter().Text("RAPORU").Bold().FontSize(22);
                 });
 
-                var coverQrBytes = GenerateQrPng(i.VerificationCode.ToString());
                 col.Item().ExtendVertical().AlignBottom().Column(b =>
                 {
                     b.Item().AlignCenter().Text(i.StartDate.Year.ToString()).Bold().FontSize(14);
                     b.Item().PaddingTop(2).AlignCenter().Text("KONYA").Bold().FontSize(14);
-                    b.Item().PaddingTop(10).AlignCenter().Width(52).Height(52).Image(coverQrBytes).FitArea();
-                    b.Item().PaddingTop(2).AlignCenter().Text($"Doğrulama Kodu: {i.VerificationCode}")
-                        .FontSize(7.5f).FontColor(Colors.Grey.Darken2);
                 });
             });
         });
@@ -894,6 +918,8 @@ public class QuestPdfService : IPdfService
 
     private static void RenderCompanyIntroPage(IDocumentContainer container, Internship i)
     {
+        var deptHeader = GetDepartmentHeaderName(i);
+        var docPrefix = GetDocumentCodePrefix(i);
         var companyAddress = string.Join(" / ",
             new[] { i.Company?.Address, i.Company?.City }.Where(s => !string.IsNullOrWhiteSpace(s)));
 
@@ -910,22 +936,38 @@ public class QuestPdfService : IPdfService
             }
         }
 
-        var nonEmptyAreas = cover?.ActivityAreas?
-            .Where(a => !string.IsNullOrWhiteSpace(a))
-            .Select((a, idx) => $"{idx + 1}. {a.Trim()}")
-            .ToList();
-        var activityText = nonEmptyAreas is { Count: > 0 }
-            ? string.Join("\n", nonEmptyAreas)
-            : (i.Company?.Sector ?? "Yazılım, Bilişim ve Mühendislik Uygulamaları");
+        var defaultAreas = new[]
+        {
+            !string.IsNullOrWhiteSpace(i.Company?.Sector) ? i.Company!.Sector! : "Mühendislik, Ar-Ge ve Kurumsal Sistem Geliştirme",
+            !string.IsNullOrWhiteSpace(i.Department) ? i.Department! : "Tasarım, Üretim ve Teknik Uygulamalar",
+            !string.IsNullOrWhiteSpace(i.Subject) ? i.Subject! : "Proje Geliştirme, Test ve Kalite Güvence Süreçleri",
+            string.Empty,
+            string.Empty
+        };
+
+        string GetActivityRow(int index)
+        {
+            if (cover?.ActivityAreas is { Count: > 0 })
+            {
+                return index < cover.ActivityAreas.Count && !string.IsNullOrWhiteSpace(cover.ActivityAreas[index])
+                    ? cover.ActivityAreas[index].Trim()
+                    : string.Empty;
+            }
+            return index < defaultAreas.Length ? defaultAreas[index] : string.Empty;
+        }
+
+        var totalEmployees = !string.IsNullOrWhiteSpace(cover?.TotalEmployees)
+            ? cover!.TotalEmployees!.Trim()
+            : "50+";
 
         container.Page(page =>
         {
             page.Size(PageSizes.A4);
-            page.MarginVertical(28);
-            page.MarginHorizontal(34);
-            page.DefaultTextStyle(x => x.FontSize(9.5f).FontColor(Colors.Black));
+            page.MarginVertical(24);
+            page.MarginHorizontal(32);
+            page.DefaultTextStyle(x => x.FontSize(9f).FontColor(Colors.Black));
 
-            // ÜST BAŞLIK TABLOSU (rapor__kapak.docx Sayfa 2 - TF-BM-SF-02a)
+            // ÜST BAŞLIK TABLOSU (Rapor Kapağı.docx Sayfa 2 - TF-BM-SF-02a)
             page.Header().Table(t =>
             {
                 t.ColumnsDefinition(c =>
@@ -948,7 +990,7 @@ public class QuestPdfService : IPdfService
                     col.Item().AlignCenter().Text("T.C.").Bold().FontSize(10.5f);
                     col.Item().AlignCenter().Text("SELÇUK ÜNİVERSİTESİ").Bold().FontSize(10.5f);
                     col.Item().AlignCenter().Text("TEKNOLOJİ FAKÜLTESİ").Bold().FontSize(10.5f);
-                    col.Item().AlignCenter().Text("BİLGİSAYAR MÜHENDİSLİĞİ BÖLÜMÜ").Bold().FontSize(10f);
+                    col.Item().AlignCenter().Text(deptHeader).Bold().FontSize(10f);
                 });
 
                 t.Cell().Border(0.75f).BorderColor(Colors.Black).Table(meta =>
@@ -958,18 +1000,18 @@ public class QuestPdfService : IPdfService
                         mc.ConstantColumn(68);
                         mc.RelativeColumn();
                     });
-                    MetaRow(meta, "Doküman No", "TF-BM-SF-02a");
+                    MetaRow(meta, "Doküman No", $"{docPrefix}-02a");
                     MetaRow(meta, "Revizyon Tarihi", "16.02.2021");
                     MetaRow(meta, "Revizyon No", "04");
                     MetaRow(meta, "Sayfa No", "2 / 2", isLast: true);
                 });
             });
 
-            page.Content().PaddingTop(14).Column(col =>
+            page.Content().PaddingTop(10).Column(col =>
             {
-                col.Spacing(10);
+                col.Spacing(8);
 
-                // İŞYERİ TANITIM TABLOSU
+                // İŞYERİ TANITIM TABLOSU (Rapor Kapağı.docx Sayfa 2 Birebir Şablonu)
                 col.Item().Table(t =>
                 {
                     t.ColumnsDefinition(c =>
@@ -982,10 +1024,13 @@ public class QuestPdfService : IPdfService
                     Form7CellValue(t, i.Company?.Name ?? "-");
 
                     Form7CellLabel(t, "İŞYERİ YETKİLİSİ");
-                    Form7CellValue(t, i.AdvisorName);
+                    Form7CellValue(t, !string.IsNullOrWhiteSpace(i.AdvisorTitle) ? $"{i.AdvisorName} ({i.AdvisorTitle})" : i.AdvisorName);
 
                     Form7CellLabel(t, "ADRESİ");
                     Form7CellValue(t, string.IsNullOrWhiteSpace(companyAddress) ? "-" : companyAddress);
+
+                    Form7CellLabel(t, "WEB ADRESİ");
+                    Form7CellValue(t, string.IsNullOrWhiteSpace(i.Company?.WebSite) ? "-" : i.Company!.WebSite!);
 
                     Form7CellLabel(t, "TELEFONU");
                     Form7CellValue(t, i.Company?.Phone ?? "-");
@@ -993,18 +1038,26 @@ public class QuestPdfService : IPdfService
                     Form7CellLabel(t, "E-POSTA");
                     Form7CellValue(t, !string.IsNullOrWhiteSpace(i.Company?.Email) ? i.Company!.Email! : i.AdvisorEmail);
 
-                    Form7CellLabel(t, "STAJ YAPILAN BİRİM");
-                    Form7CellValue(t, i.Department ?? "Bilgisayar / Yazılım Mühendisliği Birimi");
-
                     Form7CellLabel(t, "TOPLAM ÇALIŞAN SAYISI");
-                    Form7CellValue(t, string.IsNullOrWhiteSpace(cover?.TotalEmployees) ? "-" : cover!.TotalEmployees!.Trim());
+                    Form7CellValue(t, totalEmployees);
 
-                    Form7CellLabel(t, "İŞYERİ FAALİYET ALANLARI");
-                    Form7CellValue(t, activityText);
+                    t.Cell().ColumnSpan(2).Border(0.75f).BorderColor(Colors.Black).Background(Colors.Grey.Lighten3)
+                        .PaddingVertical(4).PaddingHorizontal(8).AlignCenter()
+                        .Text("İŞYERİ FAALİYET ALANLARI").Bold().FontSize(9f);
+
+                    for (int aIdx = 0; aIdx < 5; aIdx++)
+                    {
+                        t.Cell().Border(0.75f).BorderColor(Colors.Black).Background(Colors.Grey.Lighten4)
+                            .PaddingVertical(3.5f).PaddingHorizontal(8).AlignCenter().AlignMiddle()
+                            .Text((aIdx + 1).ToString()).Bold().FontSize(8.5f);
+                        t.Cell().Border(0.75f).BorderColor(Colors.Black)
+                            .PaddingVertical(3.5f).PaddingHorizontal(8).AlignMiddle()
+                            .Text(GetActivityRow(aIdx)).FontSize(8.5f);
+                    }
                 });
 
-                // PERSONEL TANITIMI TABLOSU (10 SATIR)
-                col.Item().PaddingTop(6).Table(pt =>
+                // PERSONEL TANITIMI TABLOSU (Rapor Kapağı.docx Sayfa 2 Birebir Şablonu)
+                col.Item().PaddingTop(2).Table(pt =>
                 {
                     pt.ColumnsDefinition(c =>
                     {
@@ -1015,13 +1068,13 @@ public class QuestPdfService : IPdfService
                     });
 
                     pt.Cell().ColumnSpan(4).Border(0.75f).BorderColor(Colors.Black).Background(Colors.Grey.Lighten3)
-                        .Padding(5).AlignCenter().Text("PERSONEL TANITIMI").Bold().FontSize(10f);
+                        .Padding(4.5f).AlignCenter().Text("PERSONEL TANITIMI").Bold().FontSize(9.5f);
 
-                    string[] headers = { "SIRA NO", "ADI SOYADI", "MEZUN OLDUĞU ÜNİVERSİTE / FAKÜLTE / BÖLÜM", "GÖREVİ" };
+                    string[] headers = { "SIRA NO", "ADI SOYADI", "MEZUN OLDUĞU ÜNİVERSİTE/FAKÜLTE/BÖLÜM BİLGİLERİ", "GÖREVİ" };
                     foreach (var h in headers)
                     {
                         pt.Cell().Border(0.75f).BorderColor(Colors.Black).Background(Colors.Grey.Lighten4)
-                            .Padding(4).AlignCenter().AlignMiddle().Text(h).Bold().FontSize(8f);
+                            .Padding(3.5f).AlignCenter().AlignMiddle().Text(h).Bold().FontSize(7.5f);
                     }
 
                     for (int r = 1; r <= 10; r++)
@@ -1036,17 +1089,17 @@ public class QuestPdfService : IPdfService
                             name = i.AdvisorName;
                             grad = !string.IsNullOrWhiteSpace(i.AdvisorGraduatedDepartment)
                                 ? i.AdvisorGraduatedDepartment!
-                                : (i.Department ?? "Mühendislik Fakültesi / Bilgisayar Mühendisliği");
+                                : (i.Student?.Department ?? "Bilgisayar Mühendisliği");
                             role = !string.IsNullOrWhiteSpace(i.AdvisorTitle)
                                 ? i.AdvisorTitle!
                                 : "İşyeri Staj Sorumlusu / Mühendis";
                         }
 
-                        pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(4.5f).AlignCenter().Text(r.ToString()).FontSize(8.5f);
-                        var nameCell = pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(4.5f).Text(name).FontSize(8.5f);
+                        pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(4f).AlignCenter().Text(r.ToString()).FontSize(8.5f);
+                        var nameCell = pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(4f).Text(name).FontSize(8.5f);
                         if (r == 1) nameCell.Bold();
-                        pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(4.5f).Text(grad).FontSize(8.5f);
-                        pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(4.5f).Text(role).FontSize(8.5f);
+                        pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(4f).Text(grad).FontSize(8.5f);
+                        pt.Cell().Border(0.75f).BorderColor(Colors.Black).Padding(4f).Text(role).FontSize(8.5f);
                     }
                 });
             });
@@ -1057,29 +1110,32 @@ public class QuestPdfService : IPdfService
         IDocumentContainer container, Internship i, int pageNo, DateOnly date, string title, string content,
         bool isDraft = false, byte[]? imageBytes = null, string? imageCaption = null)
     {
+        var deptHeader = GetDepartmentHeaderName(i);
+        var headerLogo = ReportHeaderLogoBytes ?? UniversityLogoBytes;
+
         container.Page(page =>
         {
             page.Size(PageSizes.A4);
             page.Margin(36);
-            page.DefaultTextStyle(x => x.FontSize(10.5f));
+            page.DefaultTextStyle(x => x.FontSize(10.5f).FontColor(Colors.Black));
 
-            // ÜST TABLO (rapor_sayfası.docx Header Birebir Şablonu)
+            // ÜST TABLO (Rapor Sayfası.docx Header Birebir Şablonu)
             page.Header().Table(t =>
             {
                 t.ColumnsDefinition(c =>
                 {
-                    c.ConstantColumn(105);
+                    c.ConstantColumn(115);
                     c.RelativeColumn();
                     c.ConstantColumn(65);
                     c.ConstantColumn(85);
                 });
 
-                // Sol Hücre (2 satır birleşik): Kurum Amblemi
+                // Sol Hücre (2 satır birleşik): Teknoloji Fakültesi Amblemi (rapor-media1.png)
                 t.Cell().RowSpan(2).Border(1).BorderColor(Colors.Black).Padding(6).AlignCenter().AlignMiddle().Column(col =>
                 {
-                    if (UniversityLogoBytes is { Length: > 0 })
+                    if (headerLogo is { Length: > 0 })
                     {
-                        col.Item().AlignCenter().Height(52).Image(UniversityLogoBytes).FitArea();
+                        col.Item().AlignCenter().Height(54).Image(headerLogo).FitArea();
                     }
                     else
                     {
@@ -1094,7 +1150,7 @@ public class QuestPdfService : IPdfService
                     col.Item().AlignCenter().Text("T.C.").Bold().FontSize(11);
                     col.Item().AlignCenter().Text("SELÇUK ÜNİVERSİTESİ").Bold().FontSize(11);
                     col.Item().AlignCenter().Text("TEKNOLOJİ FAKÜLTESİ").Bold().FontSize(11);
-                    col.Item().AlignCenter().Text("BİLGİSAYAR MÜHENDİSLİĞİ BÖLÜMÜ").Bold().FontSize(11);
+                    col.Item().AlignCenter().Text(deptHeader).Bold().FontSize(10.5f);
                     col.Item().AlignCenter().Text("STAJ RAPORU").Bold().FontSize(11);
                 });
 
@@ -1107,29 +1163,24 @@ public class QuestPdfService : IPdfService
                 t.Cell().Border(1).BorderColor(Colors.Black).Padding(6).AlignCenter().AlignMiddle().Text(pageNo.ToString()).Bold().FontSize(10);
             });
 
-            // ORTA GÖVDE (Rapor Metni Alanı)
-            page.Content().PaddingVertical(14).Border(0.5f).BorderColor(Colors.Grey.Lighten1).Padding(14).Column(col =>
+            // ORTA GÖVDE (Rapor Sayfası.docx Metin Alanı — Doğrudan Öğrencinin Formda Doldurduğu İçerik)
+            page.Content().PaddingVertical(10).Border(0.75f).BorderColor(Colors.Black).Padding(14).Column(col =>
             {
                 col.Spacing(8);
-                col.Item().Row(r =>
-                {
-                    r.RelativeItem().Text($"Öğrenci: {i.Student?.FullName} ({i.Student?.StudentNo})").FontSize(9).FontColor(Colors.Grey.Darken2);
-                    r.RelativeItem().AlignRight().Text($"Kurum: {i.Company?.Name}").FontSize(9).FontColor(Colors.Grey.Darken2);
-                });
                 if (isDraft || !string.IsNullOrWhiteSpace(title))
                 {
-                    col.Item().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).PaddingBottom(4)
+                    col.Item().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten1).PaddingBottom(5)
                         .Text(text =>
                         {
                             if (!string.IsNullOrWhiteSpace(title))
-                                text.Span($"Konu / Yapılan İş: {title}").Bold().FontSize(10.5f);
+                                text.Span(title).Bold().FontSize(11f).FontColor(Colors.Black);
                             if (isDraft)
                                 text.Span(string.IsNullOrWhiteSpace(title) ? "[TASLAK SAYFA]" : "  [TASLAK]").Bold().FontSize(9.5f).FontColor(Colors.Orange.Darken2);
                         });
                 }
                 if (!string.IsNullOrWhiteSpace(content))
                 {
-                    col.Item().PaddingTop(4).Text(content).FontSize(10.5f).LineHeight(1.35f);
+                    col.Item().PaddingTop(4).Text(content).FontSize(10.5f).FontColor(Colors.Black).LineHeight(1.4f);
                 }
                 if (imageBytes is { Length: > 0 })
                 {
@@ -1146,27 +1197,27 @@ public class QuestPdfService : IPdfService
                 }
             });
 
-            // ALT TABLO (rapor_sayfası.docx Footer Birebir Şablonu)
+            // ALT TABLO (Rapor Sayfası.docx Footer Birebir Şablonu)
             page.Footer().Table(t =>
             {
                 t.ColumnsDefinition(c => c.RelativeColumn());
 
                 t.Cell().Border(1).BorderColor(Colors.Black).PaddingVertical(4).AlignCenter()
-                    .Text("STAJ SORUMLUSU").Bold().FontSize(10);
+                    .Text("STAJ SORUMLUSU").Bold().FontSize(10).FontColor(Colors.Black);
 
                 t.Cell().Border(1).BorderColor(Colors.Black).Height(42).AlignCenter().AlignMiddle()
                     .Text(i.AdvisorLogbookApproved
                         ? $"ONAYLANDI — {i.AdvisorName} ({i.AdvisorApprovedAt:dd.MM.yyyy})"
                         : "Onay (İmza & Kaşe)")
                     .FontSize(10)
-                    .FontColor(i.AdvisorLogbookApproved ? Colors.Green.Darken2 : Colors.Grey.Medium);
+                    .FontColor(i.AdvisorLogbookApproved ? Colors.Green.Darken2 : Colors.Grey.Darken1);
 
                 t.Cell().Border(1).BorderColor(Colors.Black).PaddingVertical(4).AlignCenter()
                     .Text(i.AdvisorLogbookApproved
                         ? $"{date:dd} / {date:MM} / {date:yyyy}"
-                        : "........ /   . / 20 ..")
+                        : "........ / ……. / 20…..")
                     .FontSize(10)
-                    .FontColor(Colors.Grey.Darken1);
+                    .FontColor(Colors.Black);
             });
         });
     }

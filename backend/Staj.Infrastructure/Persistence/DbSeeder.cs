@@ -752,7 +752,7 @@ public static class DbSeeder
                 InternshipType.Staj2, "Yapay Zeka ve Bilgisayarlı Görü Ar-Ge",
                 "YOLOv8 ve PyTorch Kullanarak İHA Kamera Görüntülerinde Gerçek Zamanlı Hedef Tespiti",
                 InternshipStatus.InProgress, KptoInsuranceStatus.InsuranceActive,
-                new DateOnly(2026, 11, 2), new DateOnly(2026, 11, 30), true, false, false, null, true),
+                new DateOnly(2026, 10, 19), new DateOnly(2026, 11, 17), true, false, false, null, true),
 
             ("223311084", "Zehra Betül Kaya", "Bilgisayar Mühendisliği", "22331108404",
                 havelsanComp, "Müh. Sinan Kurtuluş", "sinan.kurtulus@havelsan.com.tr", "Siber Güvenlik Operasyon (SOC) Yöneticisi",
@@ -781,7 +781,7 @@ public static class DbSeeder
                 InternshipType.Staj2, "CNC Talaşlı İmalat ve Kalite Kontrol",
                 "5 Eksenli CNC İşleme Merkezlerinde Takım Yolu Optimizasyonu ve CMM Ölçüm Kalibrasyonu",
                 InternshipStatus.InProgress, KptoInsuranceStatus.InsuranceActive,
-                new DateOnly(2026, 11, 2), new DateOnly(2026, 11, 30), true, false, false, null, true),
+                new DateOnly(2026, 10, 19), new DateOnly(2026, 11, 17), true, false, false, null, true),
 
             ("223322018", "Onur Gökçe", "Makine Mühendisliği", "22332201833",
                 hidrokonComp, "Mak. Yük. Müh. Tarık Bozkurt", "tarik.bozkurt@hidrokon.com", "Hidrolik Sistemler Tasarım Yöneticisi",
@@ -831,7 +831,7 @@ public static class DbSeeder
                 InternshipType.Staj2, "PLC Otomasyon ve Güç Elektroniği",
                 "Endüstriyel Dağıtım Panolarında Siemens S7-1500 PLC Programlama ve Harmonik Filtre Tasarımı",
                 InternshipStatus.InProgress, KptoInsuranceStatus.InsuranceActive,
-                new DateOnly(2026, 11, 2), new DateOnly(2026, 11, 30), true, false, false, null, true),
+                new DateOnly(2026, 10, 19), new DateOnly(2026, 11, 17), true, false, false, null, true),
 
             ("223333024", "Barış Aktaş", "Elektrik-Elektronik Mühendisliği", "22333302477",
                 vestelComp, "Elkt. Yük. Müh. Tolga Ergin", "tolga.ergin@vestel.com.tr", "Donanım Ar-Ge ve PCB Tasarım Yöneticisi",
@@ -891,7 +891,24 @@ public static class DbSeeder
 
             var itemAdvisor = await EnsureAdvisorUserAsync(item.AdvEmail, item.AdvName, item.Comp, "0532 410 50 60");
 
-            var existingIntern = await db.Internships.FirstOrDefaultAsync(i => i.StudentId == student.Id);
+            var defaultCoverJson = System.Text.Json.JsonSerializer.Serialize(new Staj.Application.DTOs.CoverPageDataDto(
+                "250+ (85 Mühendis)",
+                new List<string>
+                {
+                    $"{item.Comp.Sector} ve Kurumsal Ar-Ge Çözümleri",
+                    $"{item.UnitDept} Tasarım ve Uygulama Geliştirme",
+                    item.Subject,
+                    "Sistem Entegrasyonu, Kalite Güvence ve Doğrulama Testleri",
+                    "Teknik Dokümantasyon ve Mühendislik Standartları"
+                },
+                new List<Staj.Application.DTOs.CoverStaffMemberDto>
+                {
+                    new(1, item.AdvName, $"Selçuk Üniversitesi / Teknoloji Fakültesi / {item.AcademicDept}", item.AdvTitle),
+                    new(2, "Yük. Müh. Kerem Bozdağ", $"ODTÜ / Mühendislik Fakültesi / {item.AcademicDept}", "Kıdemli Sistem ve Ar-Ge Mühendisi"),
+                    new(3, "Müh. Elif Nur Akın", $"İTÜ / Mühendislik Fakültesi / {item.AcademicDept}", "Kalite Güvence ve Test Mühendisi")
+                }));
+
+            var existingIntern = await db.Internships.Include(x => x.LogbookEntries).FirstOrDefaultAsync(i => i.StudentId == student.Id);
             if (existingIntern is not null)
             {
                 existingIntern.CompanyId = item.Comp.Id;
@@ -905,6 +922,17 @@ public static class DbSeeder
                 existingIntern.StartDate = item.StartDate;
                 existingIntern.EndDate = item.EndDate;
                 existingIntern.OriginalEndDate = item.EndDate;
+                if (item.LogbookReady && string.IsNullOrWhiteSpace(existingIntern.CoverPageDataJson))
+                {
+                    existingIntern.CoverPageDataJson = defaultCoverJson;
+                }
+                if (item.LogbookReady && existingIntern.LogbookEntries.Count > 0)
+                {
+                    foreach (var le in existingIntern.LogbookEntries)
+                    {
+                        le.Date = item.StartDate.AddDays(Math.Max(0, le.DayNumber - 1));
+                    }
+                }
                 if (!existingIntern.IsArchived)
                 {
                     existingIntern.Status = item.Status;
@@ -998,7 +1026,8 @@ public static class DbSeeder
                         ? "Sağlık sorunları ve ailevi nedenlerden dolayı mevcut dönemdeki stajımın Form 7 kapsamında iptal edilmesini arz ederim."
                         : null,
                 IsArchived = item.IsArchived,
-                ArchiveYear = item.ArchiveYear ?? "2026"
+                ArchiveYear = item.ArchiveYear ?? "2026",
+                CoverPageDataJson = item.LogbookReady ? defaultCoverJson : null
             };
             db.Internships.Add(intern);
 
@@ -1192,6 +1221,23 @@ public static class DbSeeder
             });
             await db.SaveChangesAsync();
         }
+
+        // Mükerrer açılmış ve başvurusu olmayan (0 başvuru) fazlalık dönem kayıtlarını temizle
+        var allTermsWithInterns = await db.Terms.Include(t => t.Internships).ToListAsync();
+        foreach (var group in allTermsWithInterns.GroupBy(t => t.InternshipType))
+        {
+            if (group.Count() > 1)
+            {
+                foreach (var emptyDup in group.Where(t => t.Internships.Count == 0).ToList())
+                {
+                    if (group.Count(t => t.Id != emptyDup.Id) >= 1)
+                    {
+                        db.Terms.Remove(emptyDup);
+                    }
+                }
+            }
+        }
+        await db.SaveChangesAsync();
 
         // 5) Tüm belgelerin (Form 2, SPAS, Form 4, Form 7, Maaş Dekontu) diskte (uploads klasörü) gerçek PDF dosyalarının varlığını garanti altına al
         if (pdf is not null)

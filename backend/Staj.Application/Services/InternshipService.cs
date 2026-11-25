@@ -151,21 +151,7 @@ public class InternshipService
         int? day = null;
         if (i.Status is InternshipStatus.ApprovedByCommittee or InternshipStatus.InsuranceStarted or InternshipStatus.InProgress or InternshipStatus.CompletedPendingReview or InternshipStatus.Passed)
         {
-            var rawDay = await _calc.CurrentDayAsync(i.StartDate, i.EndDate, Today, i.WorksOnSaturday, ct);
-            if (rawDay > 0)
-            {
-                var elapsedLeaveDays = i.LeaveRequests
-                    .Where(l => l.Status == LeaveRequestStatus.Approved && l.StartDate <= Today)
-                    .Sum(l => l.Days);
-                var netDay = (Today > i.EndDate || i.Status is InternshipStatus.CompletedPendingReview or InternshipStatus.Passed)
-                    ? i.WorkDays
-                    : Math.Max(1, rawDay - elapsedLeaveDays);
-                day = Math.Min(netDay, i.WorkDays);
-            }
-            else
-            {
-                day = 0;
-            }
+            day = await CalculateElapsedWorkDaysAsync(i, ct);
         }
         var dto = i.ToDetail(day);
         if (_currentUser.Role == UserRole.Student && !string.IsNullOrWhiteSpace(dto.AdvisorEmailStatus))
@@ -178,6 +164,21 @@ public class InternshipService
             dto = dto with { AdvisorEmailStatus = sanitized };
         }
         return dto;
+    }
+
+    /// <summary>
+    /// Stajın bugüne kadar tamamlanan net iş günü sayısını hesaplar.
+    /// </summary>
+    public async Task<int> CalculateElapsedWorkDaysAsync(Internship i, CancellationToken ct = default)
+    {
+        if (Today >= i.EndDate || i.Status is InternshipStatus.CompletedPendingReview or InternshipStatus.Passed)
+            return i.WorkDays;
+        var rawDay = await _calc.CurrentDayAsync(i.StartDate, i.EndDate, Today, i.WorksOnSaturday, ct);
+        if (rawDay <= 0) return 0;
+        var elapsedLeaveDays = i.LeaveRequests
+            .Where(l => l.Status == LeaveRequestStatus.Approved && l.StartDate <= Today)
+            .Sum(l => l.Days);
+        return Math.Min(Math.Max(1, rawDay - elapsedLeaveDays), i.WorkDays);
     }
 
     /// <summary>
@@ -928,6 +929,12 @@ public class InternshipService
         {
             var draftMsg = draftCount > 0 ? $" ({draftCount} sayfa hâlâ TASLAK durumunda!)" : "";
             throw AppException.BadRequest($"Eksik staj defteri sorumlu mühendise gönderilemez! Toplam {i.WorkDays} iş gününün tamamı 'Tamamlandı' olarak kaydedilmelidir (Tamamlanan: {completedCount} / {i.WorkDays} gün){draftMsg}.");
+        }
+
+        var elapsedDays = await CalculateElapsedWorkDaysAsync(i, ct);
+        if (elapsedDays < i.WorkDays)
+        {
+            throw AppException.BadRequest($"Staj süreniz henüz tamamlanmamıştır (Şu an: Stajın {elapsedDays}. İş Günü / Toplam: {i.WorkDays} İş Günü, Bitiş Tarihi: {i.EndDate:dd.MM.yyyy}). Defter sayfalarını tamamlamış olsanız bile staj süresi bitmeden staj defteri sorumlu mühendise gönderilemez.");
         }
 
         var advisor = await _db.Users.FirstOrDefaultAsync(u => u.Email == i.AdvisorEmail, ct);

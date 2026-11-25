@@ -803,8 +803,9 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
     ? selected.status === 'CompletedPendingReview' ||
       selected.status === 'Passed' ||
       (selected.currentDay ?? 0) >= selected.workDays ||
-      new Date().setHours(0, 0, 0, 0) > new Date(selected.endDate).getTime()
+      new Date().setHours(0, 0, 0, 0) >= new Date(selected.endDate).getTime()
     : false;
+  const canSubmitLogbookToAdvisor = isLogbookComplete && isInternshipDaysCompleted;
 
   // Madde 14: Staj bitimine 1 hafta kala uyarısı kontrolü
   const isEndingWithinOneWeek = (() => {
@@ -2297,19 +2298,23 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                             Sanal Staj Defterini Sorumlu Mühendise ({selected.advisorName}) Gönder
                           </p>
                           <p className="text-slate-600">
-                            {isLogbookComplete
-                              ? `✔ Tüm iş günlerini (${completedLogbookCount}/${selected.workDays} gün) tamamladınız! Şimdi defterinizi sorumlu mühendisin onayına gönderebilirsiniz.`
-                              : `⚠️ Eksik deftere onay açılmaz: Defteri sorumlu mühendise gönderebilmek için ${selected.workDays} iş gününün tamamını 'Tamamlandı' olarak kaydetmelisiniz (Tamamlanan: ${completedLogbookCount}/${selected.workDays} gün${draftLogbookCount > 0 ? `, Taslak: ${draftLogbookCount}` : ''}).`}
+                            {canSubmitLogbookToAdvisor
+                              ? `✔ Staj süreniz ve tüm iş günleriniz (${completedLogbookCount}/${selected.workDays} gün) tamamlandı! Şimdi defterinizi sorumlu mühendisin onayına gönderebilirsiniz.`
+                              : isLogbookComplete && !isInternshipDaysCompleted
+                              ? `⏳ Staj süreniz henüz tamamlanmadı (Şu an: Stajın ${selected.currentDay ?? 0}. İş Günü / ${selected.workDays} İş Günü, Bitiş: ${formatDate(selected.endDate)}). Defter sayfalarınız (${completedLogbookCount}/${selected.workDays} gün) hazır olsa da staj süresi bitmeden gönderim butonu açılmaz.`
+                              : `⚠️ Eksik deftere onay açılmaz: Defteri sorumlu mühendise gönderebilmek için hem staj sürenizin tamamlanması hem de ${selected.workDays} iş gününün tamamının 'Tamamlandı' olarak kaydedilmesi gerekir (Tamamlanan: ${completedLogbookCount}/${selected.workDays} gün${draftLogbookCount > 0 ? `, Taslak: ${draftLogbookCount}` : ''}).`}
                           </p>
                         </div>
                         <button
                           type="button"
                           onClick={handleSubmitLogbookToAdvisor}
-                          disabled={!isLogbookComplete || !!selected.isLogbookLocked}
+                          disabled={!canSubmitLogbookToAdvisor || !!selected.isLogbookLocked}
                           className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Send className="h-4 w-4" />
-                          {selected.logbookSubmittedToAdvisorAt
+                          {!isInternshipDaysCompleted
+                            ? `Staj Bitmeden Gönderilemez (${selected.currentDay ?? 0}/${selected.workDays}. İş Günü)`
+                            : selected.logbookSubmittedToAdvisorAt
                             ? 'Defteri Sorumlu Mühendise Tekrar Gönder'
                             : 'Staj Defterini Sorumlu Mühendise Gönder'}
                         </button>
@@ -3023,22 +3028,26 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                       En Son Tek PDF Halinde İndir
                     </button>
 
-                    {/* Madde 6 & 16: Staj Defteri Dolduğunda Sorumlu Mühendise Gönderen Buton */}
+                    {/* Madde 6 & 16: Staj Defteri Dolduğunda ve Staj Süresi Bittiğinde Sorumlu Mühendise Gönderen Buton */}
                     {!isLogbookReadOnly && (
                       <button
                         type="button"
                         onClick={handleSubmitLogbookToAdvisor}
-                        disabled={!isLogbookComplete}
+                        disabled={!canSubmitLogbookToAdvisor}
                         title={
-                          isLogbookComplete
+                          canSubmitLogbookToAdvisor
                             ? 'Tamamlanan staj defterini sorumlu mühendise gönder'
+                            : !isInternshipDaysCompleted
+                            ? `Staj süreniz henüz tamamlanmadı (${selected.currentDay ?? 0}/${selected.workDays} iş günü). Staj süresi bitmeden defter sorumlu mühendise gönderilemez.`
                             : `Tüm iş günleri (${selected.workDays} gün) taslaktan çıkarılıp tamamlanmadan gönderilemez`
                         }
                         className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Send className="h-4 w-4" />
-                        {isLogbookComplete
+                        {canSubmitLogbookToAdvisor
                           ? 'Staj Defterini Sorumlu Mühendise Gönder'
+                          : !isInternshipDaysCompleted
+                          ? `Staj Bitmeden Gönderilemez (${selected.currentDay ?? 0}/${selected.workDays}. İş Günü)`
                           : `Mühendise Gönder (${completedLogbookCount}/${selected.workDays} Gün)`}
                       </button>
                     )}
@@ -3211,7 +3220,7 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                               <div>T.C.</div>
                               <div>SELÇUK ÜNİVERSİTESİ</div>
                               <div>TEKNOLOJİ FAKÜLTESİ</div>
-                              <div>BİLGİSAYAR MÜHENDİSLİĞİ BÖLÜMÜ</div>
+                              <div>{(user.department || 'Bilgisayar Mühendisliği').toLocaleUpperCase('tr-TR')} BÖLÜMÜ</div>
                             </div>
 
                             <div className="py-6">
@@ -3223,19 +3232,16 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                             </div>
 
                             <div className="space-y-2 text-sm font-bold">
-                              <div>Öğrenci Numarası: {verifiedStudentNo}</div>
-                              <div>Adı ve Soyadı: {user.fullName}</div>
+                              <div>Öğrenci Numarası Adı ve Soyadı</div>
+                              <div className="text-base">{verifiedStudentNo}   {user.fullName}</div>
                             </div>
 
                             <div className="py-8">
                               <div className="text-2xl font-extrabold tracking-wide">
-                                {selected.type === 'Staj1' ? 'STAJ I RAPORU' : 'STAJ II RAPORU'}
+                                {selected.type === 'Staj1' ? 'Staj I' : 'Staj II'}
                               </div>
-                              <div className="mt-2 text-sm font-semibold text-slate-700">
-                                {selected.companyName}
-                              </div>
-                              <div className="mt-1 text-xs text-slate-600">
-                                ({formatDate(selected.startDate)} – {formatDate(selected.endDate)} • {selected.workDays} İş Günü)
+                              <div className="mt-1 text-2xl font-extrabold tracking-wide">
+                                RAPORU
                               </div>
                             </div>
 
@@ -3302,7 +3308,7 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                                   <div>T.C.</div>
                                   <div>SELÇUK ÜNİVERSİTESİ</div>
                                   <div>TEKNOLOJİ FAKÜLTESİ</div>
-                                  <div>BİLGİSAYAR MÜHENDİSLİĞİ BÖLÜMÜ</div>
+                                  <div>{(user.department || 'Bilgisayar Mühendisliği').toLocaleUpperCase('tr-TR')} BÖLÜMÜ</div>
                                 </td>
                                 <td className="w-44 border border-black p-2 text-[11px]">
                                   <div><b>Doküman No:</b> TF-BM-SF-02a</div>
@@ -3548,7 +3554,7 @@ export const StudentPanel: React.FC<Props> = ({ user, onUserUpdated }) => {
                                   <div>T.C.</div>
                                   <div>SELÇUK ÜNİVERSİTESİ</div>
                                   <div>TEKNOLOJİ FAKÜLTESİ</div>
-                                  <div>BİLGİSAYAR MÜHENDİSLİĞİ BÖLÜMÜ</div>
+                                  <div>{(user.department || 'Bilgisayar Mühendisliği').toLocaleUpperCase('tr-TR')} BÖLÜMÜ</div>
                                   <div className="mt-0.5">STAJ RAPORU</div>
                                 </td>
 
