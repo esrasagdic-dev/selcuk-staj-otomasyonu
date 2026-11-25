@@ -46,41 +46,47 @@ const STUDENT_DEMO_ACCOUNTS = [
   },
 ];
 
+const DEPARTMENT_COMMITTEE_OPTIONS = [
+  {
+    dept: 'Bilgisayar Mühendisliği',
+    name: 'Doç. Dr. Ayşe Kaya',
+    email: 'komisyon@selcuk.edu.tr',
+  },
+  {
+    dept: 'Makine Mühendisliği',
+    name: 'Doç. Dr. Hasan Çetin',
+    email: 'komisyon.makine@selcuk.edu.tr',
+  },
+  {
+    dept: 'Elektrik-Elektronik Mühendisliği',
+    name: 'Doç. Dr. Murat Yıldız',
+    email: 'komisyon.ee@selcuk.edu.tr',
+  },
+];
+
 const ADMIN_DEMO_ACCOUNTS = [
   {
-    label: '1. Bilgisayar Müh. Komisyonu (Doç. Dr. Ayşe Kaya)',
+    label: '1. Komisyon Paneli (Doç. Dr. Ayşe Kaya)',
     email: 'komisyon@selcuk.edu.tr',
-    badge: 'Bilgisayar Komisyon',
+    badge: 'Komisyon',
     color: 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100',
   },
   {
-    label: '2. Makine Müh. Komisyonu (Doç. Dr. Hasan Çetin)',
-    email: 'komisyon.makine@selcuk.edu.tr',
-    badge: 'Makine Komisyon',
-    color: 'border-orange-300 bg-orange-50 text-orange-900 hover:bg-orange-100',
-  },
-  {
-    label: '3. Elektrik-Elektronik Müh. Komisyonu (Doç. Dr. Murat Yıldız)',
-    email: 'komisyon.ee@selcuk.edu.tr',
-    badge: 'Elektrik-Elektronik Komisyon',
-    color: 'border-cyan-300 bg-cyan-50 text-cyan-900 hover:bg-cyan-100',
-  },
-  {
-    label: '4. Bölüm Başkanı — Bilgisayar Müh. (Prof. Dr. Mehmet Yılmaz)',
+    label: '2. Bölüm Başkanı (Prof. Dr. Mehmet Yılmaz)',
     email: 'bolumbaskani@selcuk.edu.tr',
-    badge: 'Bölüm Başkanı',
+    badge: 'Süper Yetkili',
     color: 'border-purple-300 bg-purple-50 text-purple-900 hover:bg-purple-100',
   },
   {
-    label: '5. Şirket Paneli / Sorumlu Mühendis (Yük. Müh. Gökhan Yılmaz — TUSAŞ)',
+    label: '3. Şirket Paneli / Advisor (Yük. Müh. Gökhan Yılmaz — TUSAŞ)',
     email: 'gokhan.yilmaz@tusas.com',
-    badge: 'Şirket Yetkilisi',
+    badge: 'Şirket',
     color: 'border-indigo-300 bg-indigo-50 text-indigo-900 hover:bg-indigo-100',
   },
   {
-    label: '6. KPTO / Sigorta Paneli (Mustafa Demir)',
+    label: '4. KPTO / Sigorta Paneli (Mustafa Demir)',
     email: 'kpto@selcuk.edu.tr',
-    badge: 'KPTO Sigorta',
+    badge: 'KPTO',
     color: 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100',
   },
 ];
@@ -584,6 +590,44 @@ export function App() {
                       Yönetici Oturumu Aç
                     </button>
                   </form>
+
+                  {/* Bölüm Komisyonları Seçenekleri (Bilgi Giriş Kısmının Altında) */}
+                  <div className="mt-5 border-t border-slate-200 pt-4">
+                    <p className="mb-2 text-[11px] font-bold text-slate-500 uppercase">
+                      Bölüm Staj Komisyonu Seçenekleri (Şifre: 123456)
+                    </p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {DEPARTMENT_COMMITTEE_OPTIONS.map((opt) => {
+                        const isSelected = email.trim().toLowerCase() === opt.email;
+                        return (
+                          <button
+                            key={opt.email}
+                            type="button"
+                            onClick={(e) => {
+                              setEmail(opt.email);
+                              setPassword('123456');
+                              handleLogin(e, opt.email);
+                            }}
+                            className={`flex flex-col justify-between rounded-xl border p-2.5 text-left transition ${
+                              isSelected
+                                ? 'border-amber-500 bg-amber-50 text-amber-950 ring-2 ring-amber-500/20'
+                                : 'border-slate-200 bg-slate-50 text-slate-800 hover:border-amber-300 hover:bg-amber-50/50'
+                            }`}
+                          >
+                            <div>
+                              <p className="text-xs font-extrabold">{opt.dept}</p>
+                              <p className="mt-0.5 text-[11px] font-semibold text-slate-600">
+                                {opt.name}
+                              </p>
+                            </div>
+                            <p className="mt-1.5 truncate text-[10px] font-medium text-amber-800">
+                              {opt.email}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </div>
 
