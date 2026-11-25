@@ -960,28 +960,6 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
 
   return (
     <div className="space-y-6">
-      {/* Aktif Bölüm Komisyonu Başlığı ve İzolasyon Rozeti */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 px-5 py-4 text-white shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 text-amber-300 backdrop-blur-xs">
-            <Building2 className="h-6 w-6" />
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-extrabold tracking-tight sm:text-lg">
-                {user.department || 'Bilgisayar Mühendisliği'} — Staj Komisyonu Yönetim Paneli
-              </h2>
-              <span className="rounded-full bg-amber-400/20 border border-amber-300/40 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-200">
-                🔒 Bölüm İzolasyonu Aktif
-              </span>
-            </div>
-            <p className="mt-0.5 text-xs text-blue-100">
-              Yetkili: <b>{user.fullName}</b> ({roleLabels[user.role]}) • Yalnızca <b>{user.department || 'Bilgisayar Mühendisliği'}</b> bölümüne kayıtlı öğrencilerin başvuruları, izinleri ve arşivleri listelenmektedir.
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Özet İstatistik Kartları (Tıklanabilir & Akordeon Filtre Yapısı) */}
       {stats && (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
@@ -989,10 +967,13 @@ export const CommitteePanel: React.FC<Props> = ({ user }) => {
             onClick={() => setIsStatsOpen((prev) => !prev)}
             className="flex cursor-pointer items-center justify-between border-b border-slate-100 bg-slate-50/70 px-5 py-3 transition hover:bg-slate-100/80"
           >
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
               <Filter className="h-4 w-4 text-blue-700" />
               <span className="text-xs font-extrabold uppercase tracking-wide text-slate-800">
                 Başvuru Durum Özeti & Hızlı Filtre Kartları
+              </span>
+              <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-900">
+                {user.department || 'Bilgisayar Mühendisliği'}
               </span>
               {(activeCard !== 'all' || statusFilter) && (
                 <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-bold text-blue-800">
